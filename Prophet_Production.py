@@ -63,7 +63,7 @@ with col3:
     selected_year = st.selectbox("เลือกปีงบประมาณ (เพื่อดูกราฟเฉพาะช่วงปี)", year_options)
 
 # 🔧 ปรับระดับการให้บริการ (Service Level)
-service_level = st.slider("ระดับการให้บริการ (Service Level %)", min_value=0, max_value=100, value=95)
+service_level = st.slider("ระดับการให้บริการ (Service Level %)", min_value=50, max_value=99, value=80)
 z = norm.ppf(service_level / 100) # ปรับปรุงการคำนวณ Z-score 
 
 model, forecast, future, name, df_filtered = forecasting_fn(df, plant=selected_center, coin=selected_coin)
