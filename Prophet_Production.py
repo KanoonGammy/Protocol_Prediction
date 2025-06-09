@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 from prophet import Prophet
-
+from scipy.stats import norm
 # ------------------ ฟังก์ชันหลัก ------------------
 def forecasting_fn(df, plant, coin):
     name = f"{plant}: {coin}"
@@ -64,7 +64,7 @@ with col3:
 
 # 🔧 ปรับระดับการให้บริการ (Service Level)
 service_level = st.slider("ระดับการให้บริการ (Service Level %)", min_value=0, max_value=100, value=95)
-z = round(np.abs(np.percentile(np.random.normal(size=100000), (100 + service_level) / 2)), 2)
+z = norm.ppf(service_level / 100) # ปรับปรุงการคำนวณ Z-score 
 
 model, forecast, future, name, df_filtered = forecasting_fn(df, plant=selected_center, coin=selected_coin)
 
@@ -77,7 +77,10 @@ else:
     coin_unit = 'บาท'
 
 # คำนวณค่าคลาดเคลื่อนและ Bound
-errors = df_filtered['y'] - forecast['yhat'].iloc[:len(df_filtered)]
+
+merged = pd.merge(df_filtered, forecast[['ds', 'yhat']], on='ds', how='inner') # ปรับปรุงเพื่อป้องกันการ mismatch
+errors = merged['y'] - merged['yhat']
+
 std_error = np.std(errors)
 lead_time = 1  # เดือน
 safety_stock = z * std_error * np.sqrt(lead_time)
