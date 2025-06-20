@@ -15,7 +15,7 @@ def forecasting_fn(df, plant, coin):
     model.add_seasonality(name='Quarterly', period=91.25, fourier_order=2)
     model.fit(df_filtered)
 
-    future = model.make_future_dataframe(periods=36, freq='ME')
+    future = model.make_future_dataframe(periods=24, freq='ME')
     forecast = model.predict(future)
 
     df_filtered.reset_index(inplace=True)
@@ -118,7 +118,7 @@ st.info(f"🔍 ระดับการให้บริการย้อน�
 # แสดงกราฟตามปีงบประมาณที่เลือก
 plot_forecast_plotly(name, df_filtered, forecast, fiscal_year=None if selected_year == "ทั้งหมด" else selected_year, bound_margin=safety_stock)
 
-# st.video("https://youtu.be/3KalfTj3xDw")
+st.video("https://youtu.be/3KalfTj3xDw")
 
 # 🔍 ฟังก์ชันดูทั้งหมด
 if st.checkbox("แสดงผลการทำนายทั้งหมด"):
