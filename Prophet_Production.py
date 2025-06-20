@@ -118,7 +118,7 @@ st.info(f"🔍 ระดับการให้บริการย้อน�
 # แสดงกราฟตามปีงบประมาณที่เลือก
 plot_forecast_plotly(name, df_filtered, forecast, fiscal_year=None if selected_year == "ทั้งหมด" else selected_year, bound_margin=safety_stock)
 
-st.video("https://youtu.be/3KalfTj3xDw")
+#st.video("https://youtu.be/3KalfTj3xDw")
 
 # 🔍 ฟังก์ชันดูทั้งหมด
 if st.checkbox("แสดงผลการทำนายทั้งหมด"):
