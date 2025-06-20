@@ -15,7 +15,7 @@ def forecasting_fn(df, plant, coin):
     model.add_seasonality(name='Quarterly', period=91.25, fourier_order=2)
     model.fit(df_filtered)
 
-    future = model.make_future_dataframe(periods=12, freq='ME')
+    future = model.make_future_dataframe(periods=36, freq='ME')
     forecast = model.predict(future)
 
     df_filtered.reset_index(inplace=True)
