@@ -181,7 +181,7 @@ for year in range(latest_date.year + 1, latest_date.year + 6):
     )
     fig_bar.update_traces(textposition='outside')
     fig_bar.update_layout(width=1000, height=500)
-        st.plotly_chart(fig_bar, use_container_width=True)
+    st.plotly_chart(fig_bar, use_container_width=True)
 
     # แสดงยอดรวมในแต่ละปี
     total_yhat = this_year_data['yhat'].sum()
