@@ -126,7 +126,7 @@ plot_forecast_plotly(name, df_filtered, forecast, fiscal_year=None if selected_y
 
 # ตารางรายเดือน (เฉพาะอนาคต 12 เดือน)
 monthly_forecast = forecast[['ds', 'yhat', 'yhat_upper']].copy()
-monthly_forecast['safety_stock'] = monthly_forecast['yhat_upper'] - monthly_forecast['yhat']
+monthly_forecast['safety_stock'] = forecast['yhat_upper'] - forecast['yhat']
 monthly_forecast['total_required'] = monthly_forecast['yhat'] + monthly_forecast['safety_stock']
 monthly_forecast['month'] = monthly_forecast['ds'].dt.strftime('%b %Y')
 latest_date = df_filtered['ds'].max()
@@ -174,11 +174,11 @@ fig_bar = px.bar(
     y='จำนวน',
     color='ประเภท',
     barmode='group',
-    text='จำนวน',
+    text=monthly_long['จำนวน'].apply(lambda x: f"{x/1e6:.2f}M"),
     labels={'month_name': 'เดือน', 'จำนวน': 'ปริมาณ'},
     title=f'ปริมาณเหรียญที่ต้องเตรียมแต่ละเดือน (ม.ค. - ธ.ค. {next_year})'
 )
-fig_bar.update_traces(texttemplate='%{text:.2f}', textposition='outside')
+fig_bar.update_traces(textposition='outside')
 fig_bar.update_layout(width=1000, height=500)
 st.plotly_chart(fig_bar, use_container_width=True)
 
