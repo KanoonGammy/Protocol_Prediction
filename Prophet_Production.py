@@ -23,7 +23,7 @@ def forecasting_fn(df, plant, coin, interval_width):
     )
     model.fit(df_filtered)
 
-    future = model.make_future_dataframe(periods=24, freq='ME')
+    future = model.make_future_dataframe(periods=60, freq='ME')
     forecast = model.predict(future)
 
     df_filtered.reset_index(inplace=True)
@@ -138,49 +138,46 @@ monthly_forecast_display = monthly_forecast_display.round(2)
 st.subheader("ตารางการเตรียมพร้อมเหรียญรายเดือน (12 เดือนข้างหน้า)")
 st.dataframe(monthly_forecast_display, use_container_width=True)
 
-# กราฟ grouped bar รายเดือน ม.ค. - ธ.ค.
-monthly_chart = forecast[['ds', 'yhat', 'yhat_upper']].copy()
-monthly_chart['safety_stock'] = monthly_chart['yhat_upper'] - monthly_chart['yhat']
-monthly_chart['total_required'] = monthly_chart['yhat_upper']
-monthly_chart['month'] = monthly_chart['ds'].dt.month
-monthly_chart['month_name'] = monthly_chart['ds'].dt.strftime('%b')
+# กราฟ grouped bar รายปี ครบ 5 ปี
+for year in range(latest_date.year + 1, latest_date.year + 6):
+    yearly_chart = forecast.copy()
+    yearly_chart['year'] = yearly_chart['ds'].dt.year
+    yearly_chart['month'] = yearly_chart['ds'].dt.month
+    yearly_chart['month_name'] = yearly_chart['ds'].dt.strftime('%b')
+    yearly_chart['safety_stock'] = yearly_chart['yhat_upper'] - yearly_chart['yhat']
+    yearly_chart['total_required'] = yearly_chart['yhat_upper']
+    
+    this_year_data = yearly_chart[yearly_chart['year'] == year]
+    monthly_grouped = this_year_data.groupby(['month', 'month_name']).agg({
+        'yhat': 'mean',
+        'safety_stock': 'mean',
+        'total_required': 'mean'
+    }).reset_index()
 
-next_year = latest_date.year + 1
-monthly_chart = monthly_chart[(monthly_chart['ds'].dt.year == next_year) & (monthly_chart['ds'].dt.month <= 12)]
+    monthly_grouped['month_name'] = pd.Categorical(monthly_grouped['month_name'], categories=month_order, ordered=True)
+    monthly_grouped.sort_values('month', inplace=True)
 
-monthly_grouped = monthly_chart.groupby(['month', 'month_name']).agg({
-    'yhat': 'mean',
-    'safety_stock': 'mean',
-    'total_required': 'mean'
-}).reset_index()
+    monthly_long = monthly_grouped.melt(
+        id_vars='month_name',
+        value_vars=['yhat', 'safety_stock', 'total_required'],
+        var_name='ประเภท',
+        value_name='จำนวน'
+    )
+    monthly_long['ประเภท'] = monthly_long['ประเภท'].map(label_map)
 
-month_order = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-               'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-monthly_grouped['month_name'] = pd.Categorical(monthly_grouped['month_name'], categories=month_order, ordered=True)
-monthly_grouped.sort_values('month', inplace=True)
-
-monthly_long = monthly_grouped.melt(
-    id_vars='month_name',
-    value_vars=['yhat', 'safety_stock', 'total_required'],
-    var_name='ประเภท',
-    value_name='จำนวน'
-)
-label_map = {'yhat': 'ค่าพยากรณ์', 'safety_stock': 'Safety Stock', 'total_required': 'รวมที่ควรมี'}
-monthly_long['ประเภท'] = monthly_long['ประเภท'].map(label_map)
-
-fig_bar = px.bar(
-    monthly_long,
-    x='month_name',
-    y='จำนวน',
-    color='ประเภท',
-    barmode='group',
-    text=monthly_long['จำนวน'].apply(lambda x: f"{x/1e6:.2f}M"),
-    labels={'month_name': 'เดือน', 'จำนวน': 'ปริมาณ'},
-    title=f'ปริมาณเหรียญที่ต้องเตรียมแต่ละเดือน (ม.ค. - ธ.ค. {next_year})'
-)
-fig_bar.update_traces(textposition='outside')
-fig_bar.update_layout(width=1000, height=500)
-st.plotly_chart(fig_bar, use_container_width=True)
+    fig_bar = px.bar(
+        monthly_long,
+        x='month_name',
+        y='จำนวน',
+        color='ประเภท',
+        barmode='group',
+        text=monthly_long['จำนวน'].apply(lambda x: f"{x/1e6:.2f}M"),
+        labels={'month_name': 'เดือน', 'จำนวน': 'ปริมาณ'},
+        title=f'ปริมาณเหรียญที่ต้องเตรียมแต่ละเดือน ({year})'
+    )
+    fig_bar.update_traces(textposition='outside')
+    fig_bar.update_layout(width=1000, height=500)
+    st.plotly_chart(fig_bar, use_container_width=True)
 
 # ตัวเลือกแสดงผลเต็ม
 if st.checkbox("แสดงผลการทำนายทั้งหมด"):
