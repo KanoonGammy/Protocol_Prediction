@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
+import plotly.express as px
 from prophet import Prophet
 
 # ------------------ ฟังก์ชันหลัก ------------------
@@ -28,7 +29,7 @@ def forecasting_fn(df, plant, coin, interval_width):
     df_filtered.reset_index(inplace=True)
     return model, forecast, future, name, df_filtered
 
-# ------------------ ฟังก์ชันกราฟ ------------------
+# ------------------ ฟังก์ชันกราฟรวม ------------------
 def plot_forecast_plotly(name, df, forecast, fiscal_year=None):
     if fiscal_year:
         year_ad = fiscal_year - 543
@@ -50,7 +51,7 @@ def plot_forecast_plotly(name, df, forecast, fiscal_year=None):
 
 # ------------------ Streamlit App ------------------
 st.set_page_config(page_title="Forecasting Coins", layout="wide")
-st.title("🔮 Owl Mint Forecast Dashboard")
+st.title("\ud83d\udd2e Owl Mint Forecast Dashboard")
 
 # โหลดข้อมูล
 data = pd.read_excel("Data_Monthly.xlsx", index_col=0)
@@ -71,7 +72,7 @@ with col3:
     year_options = ["ทั้งหมด"] + fiscal_years[::-1]
     selected_year = st.selectbox("เลือกปีงบประมาณ (เพื่อดูกราฟเฉพาะช่วงปี)", year_options)
 
-# 🌡️ Slider สำหรับปรับระดับความเชื่อมั่น
+# Slider ความเชื่อมั่น
 interval_width_percent = st.slider(
     "ระดับความเชื่อมั่น (%) ที่ใช้สร้างช่วงการพยากรณ์ (Prediction Interval)",
     min_value=50, max_value=99, value=80
@@ -82,12 +83,7 @@ interval_width = interval_width_percent / 100
 model, forecast, future, name, df_filtered = forecasting_fn(df, plant=selected_center, coin=selected_coin, interval_width=interval_width)
 
 # หน่วยเหรียญ
-if selected_coin == 'รวม':
-    coin_unit = 'บาท'
-elif float(selected_coin) < 1:
-    coin_unit = 'สตางค์'
-else:
-    coin_unit = 'บาท'
+coin_unit = 'บาท' if selected_coin == 'รวม' or float(selected_coin) >= 1 else 'สตางค์'
 
 # คำนวณค่าพยากรณ์และ Safety Stock
 forecast['safety_stock'] = forecast['yhat_upper'] - forecast['yhat']
@@ -104,8 +100,8 @@ total_required_year = total_required * 12
 merged = pd.merge(df_filtered, forecast[['ds', 'yhat']], on='ds', how='inner')
 service_level_empirical = np.mean(merged['y'] <= merged['yhat']) * 100
 
-# แสดงผล
-st.subheader(f"📊 ผลการทำนายเหรียญ {selected_coin} {coin_unit if selected_coin != 'รวม' else ''} @ {selected_center}")
+# แสดงผลสรุป
+st.subheader(f"\ud83d\udcca ผลการทำนายเหรียญ {selected_coin} {coin_unit} @ {selected_center}")
 col1, col2, col3 = st.columns(3)
 with col1:
     st.metric("ค่าเฉลี่ยที่ควรมีต่อเดือน", f"{mean_forecast:,.2f}")
@@ -122,16 +118,69 @@ with col5:
 with col6:
     st.metric("ขั้นต่ำต่อปีที่ควรมี", f"{total_required_year:,.2f}")
 
-# อธิบายระดับความมั่นใจ
-st.info(f"🔍 ระดับการให้บริการย้อนหลังจริง (Empirical Service Level): {service_level_empirical:.2f}%")
-st.info(f"🔧 ใช้ช่วงความเชื่อมั่นจาก Prophet ({interval_width_percent}%) เพื่อประเมิน Safety Stock โดยไม่ใช้ Z-score")
+st.info(f"\ud83d\udd0d ระดับการให้บริการย้อนหลังจริง (Empirical Service Level): {service_level_empirical:.2f}%")
+st.info(f"\ud83d\udd27 ใช้ช่วงความเชื่อมั่นจาก Prophet ({interval_width_percent}%) เพื่อประเมิน Safety Stock")
 
 # แสดงกราฟ
 plot_forecast_plotly(name, df_filtered, forecast, fiscal_year=None if selected_year == "ทั้งหมด" else selected_year)
 
-# วิดีโอเสริม
-st.video("https://youtu.be/3KalfTj3xDw")
+# ตารางรายเดือน (เฉพาะอนาคต 12 เดือน)
+monthly_forecast = forecast[['ds', 'yhat', 'yhat_upper']].copy()
+monthly_forecast['safety_stock'] = monthly_forecast['yhat_upper'] - monthly_forecast['yhat']
+monthly_forecast['total_required'] = monthly_forecast['yhat'] + monthly_forecast['safety_stock']
+monthly_forecast['month'] = monthly_forecast['ds'].dt.strftime('%b %Y')
+latest_date = df_filtered['ds'].max()
+monthly_forecast = monthly_forecast[monthly_forecast['ds'] > latest_date].head(12)
+monthly_forecast_display = monthly_forecast[['month', 'yhat', 'safety_stock', 'total_required']].copy()
+monthly_forecast_display.columns = ['เดือน', 'ค่าพยากรณ์', 'Safety Stock', 'รวมที่ควรมี']
+monthly_forecast_display = monthly_forecast_display.round(2)
 
-# ตารางผลการทำนาย
+st.subheader("\ud83d\udcc6 ตารางการเตรียมพร้อมเหรียญรายเดือน (12 เดือนข้างหน้า)")
+st.dataframe(monthly_forecast_display, use_container_width=True)
+
+# กราฟ grouped bar รายเดือน ม.ค. - ธ.ค.
+monthly_chart = forecast[['ds', 'yhat', 'yhat_upper']].copy()
+monthly_chart['safety_stock'] = monthly_chart['yhat_upper'] - monthly_chart['yhat']
+monthly_chart['total_required'] = monthly_chart['yhat_upper']
+monthly_chart['month'] = monthly_chart['ds'].dt.month
+monthly_chart['month_name'] = monthly_chart['ds'].dt.strftime('%b')
+
+next_year = latest_date.year + 1
+monthly_chart = monthly_chart[(monthly_chart['ds'].dt.year == next_year) & (monthly_chart['ds'].dt.month <= 12)]
+
+monthly_grouped = monthly_chart.groupby(['month', 'month_name']).agg({
+    'yhat': 'mean',
+    'safety_stock': 'mean',
+    'total_required': 'mean'
+}).reset_index()
+
+month_order = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+               'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+monthly_grouped['month_name'] = pd.Categorical(monthly_grouped['month_name'], categories=month_order, ordered=True)
+monthly_grouped.sort_values('month', inplace=True)
+
+monthly_long = monthly_grouped.melt(
+    id_vars='month_name',
+    value_vars=['yhat', 'safety_stock', 'total_required'],
+    var_name='ประเภท',
+    value_name='จำนวน'
+)
+label_map = {'yhat': 'ค่าพยากรณ์', 'safety_stock': 'Safety Stock', 'total_required': 'รวมที่ควรมี'}
+monthly_long['ประเภท'] = monthly_long['ประเภท'].map(label_map)
+
+fig_bar = px.bar(
+    monthly_long,
+    x='month_name',
+    y='จำนวน',
+    color='ประเภท',
+    barmode='group',
+    text_auto='.2s',
+    labels={'month_name': 'เดือน', 'จำนวน': 'ปริมาณ'},
+    title=f'\ud83d\udcc5 ปริมาณเหรียญที่ต้องเตรียมแต่ละเดือน (ม.ค. - ธ.ค. {next_year})'
+)
+fig_bar.update_layout(width=1000, height=500)
+st.plotly_chart(fig_bar, use_container_width=True)
+
+# ตัวเลือกแสดงผลเต็ม
 if st.checkbox("แสดงผลการทำนายทั้งหมด"):
     st.dataframe(forecast[['ds', 'yhat', 'yhat_lower', 'yhat_upper']].reset_index(drop=True))
