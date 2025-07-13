@@ -12,6 +12,7 @@ def forecasting_fn(df, plant, coin):
     df_filtered['ds'] = pd.to_datetime(df_filtered['ds'])
 
     model = Prophet(
+        interval_width=0.95,
         changepoint_prior_scale=0.09983219300142447,
         changepoint_range=0.8349896986260539,
         seasonality_prior_scale=9.433629187865968,
@@ -115,7 +116,6 @@ with col6:
 
 # แสดงระดับการให้บริการจริง
 st.info(f"🔍 ระดับการให้บริการย้อนหลังจริง (Empirical Service Level): {service_level_empirical:.2f}%")
-st.info("🔧 ใช้ค่าช่วงความมั่นใจจาก Prophet (yhat_upper/yhat_lower) แทนการคำนวณ safety stock แบบเดิม")
 
 # วาดกราฟ
 plot_forecast_plotly(name, df_filtered, forecast, fiscal_year=None if selected_year == "ทั้งหมด" else selected_year)
