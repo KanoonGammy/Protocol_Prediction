@@ -174,10 +174,11 @@ fig_bar = px.bar(
     y='จำนวน',
     color='ประเภท',
     barmode='group',
-    text_auto='.2s',
+    text='จำนวน',
     labels={'month_name': 'เดือน', 'จำนวน': 'ปริมาณ'},
     title=f'ปริมาณเหรียญที่ต้องเตรียมแต่ละเดือน (ม.ค. - ธ.ค. {next_year})'
 )
+fig_bar.update_traces(texttemplate='%{text:.2f}', textposition='outside')
 fig_bar.update_layout(width=1000, height=500)
 st.plotly_chart(fig_bar, use_container_width=True)
 
