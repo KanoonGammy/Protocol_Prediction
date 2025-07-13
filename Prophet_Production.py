@@ -180,14 +180,28 @@ for year in range(latest_date.year + 1, latest_date.year + 6):
         title=f'ปริมาณเหรียญที่ต้องเตรียมแต่ละเดือน ({year})'
     )
     fig_bar.update_traces(textposition='outside')
-    fig_bar.update_layout(width=1000, height=500)
+    fig_bar.update_layout(
+        width=1000,
+        height=500,
+        annotations=[
+            dict(
+                x=0.5,
+                y=1.15,
+                xref='paper',
+                yref='paper',
+                text=f"ยอดรวมปี {year}: ค่าพยากรณ์ = {total_yhat:,.2f}, Safety Stock = {total_safety:,.2f}, รวมที่ควรมี = {total_total:,.2f}",
+                showarrow=False,
+                font=dict(size=12)
+            )
+        ]
+    )
     st.plotly_chart(fig_bar, use_container_width=True)
 
     # แสดงยอดรวมในแต่ละปี
     total_yhat = this_year_data['yhat'].sum()
     total_safety = this_year_data['safety_stock'].sum()
     total_total = this_year_data['total_required'].sum()
-    st.markdown(f"**ยอดรวมปี {year}:** ค่าพยากรณ์ = {total_yhat:,.2f}, Safety Stock = {total_safety:,.2f}, รวมที่ควรมี = {total_total:,.2f}")
+    
 
 # ตัวเลือกแสดงผลเต็ม
 if st.checkbox("แสดงผลการทำนายทั้งหมด"):
