@@ -180,6 +180,11 @@ for year in range(latest_date.year + 1, latest_date.year + 6):
         title=f'ปริมาณเหรียญที่ต้องเตรียมแต่ละเดือน ({year})'
     )
     fig_bar.update_traces(textposition='outside')
+    # คำนวณยอดรวมก่อนสร้าง annotation
+    total_yhat = this_year_data['yhat'].sum()
+    total_safety = this_year_data['safety_stock'].sum()
+    total_total = this_year_data['total_required'].sum()
+
     fig_bar.update_layout(
         width=1000,
         height=500,
@@ -197,7 +202,7 @@ for year in range(latest_date.year + 1, latest_date.year + 6):
     )
     st.plotly_chart(fig_bar, use_container_width=True)
 
-    # แสดงยอดรวมในแต่ละปี
+        # แสดงยอดรวมในแต่ละปี
     total_yhat = this_year_data['yhat'].sum()
     total_safety = this_year_data['safety_stock'].sum()
     total_total = this_year_data['total_required'].sum()
