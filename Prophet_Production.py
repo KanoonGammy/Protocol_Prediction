@@ -138,6 +138,9 @@ monthly_forecast_display = monthly_forecast_display.round(2)
 st.subheader("ตารางการเตรียมพร้อมเหรียญรายเดือน (12 เดือนข้างหน้า)")
 st.dataframe(monthly_forecast_display, use_container_width=True)
 
+month_order = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+label_map = {'yhat': 'ค่าพยากรณ์', 'safety_stock': 'Safety Stock', 'total_required': 'รวมที่ควรมี'}
+
 # กราฟ grouped bar รายปี ครบ 5 ปี
 for year in range(latest_date.year + 1, latest_date.year + 6):
     yearly_chart = forecast.copy()
