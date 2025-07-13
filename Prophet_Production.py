@@ -5,14 +5,14 @@ import plotly.graph_objects as go
 from prophet import Prophet
 
 # ------------------ ฟังก์ชันหลัก ------------------
-def forecasting_fn(df, plant, coin):
+def forecasting_fn(df, plant, coin, interval_width):
     name = f"{plant}: {coin}"
     df_filtered = df[df['PLANTNAME'] == plant][['date', coin]]
     df_filtered.columns = ['ds', 'y']
     df_filtered['ds'] = pd.to_datetime(df_filtered['ds'])
 
     model = Prophet(
-        interval_width=0.95,
+        interval_width=interval_width,
         changepoint_prior_scale=0.09983219300142447,
         changepoint_range=0.8349896986260539,
         seasonality_prior_scale=9.433629187865968,
@@ -52,6 +52,7 @@ def plot_forecast_plotly(name, df, forecast, fiscal_year=None):
 st.set_page_config(page_title="Forecasting Coins", layout="wide")
 st.title("🔮 Owl Mint Forecast Dashboard")
 
+# โหลดข้อมูล
 data = pd.read_excel("Data_Monthly.xlsx", index_col=0)
 df = data.copy()
 df.rename(columns={'Fiscal_Year': 'FiscalYear'}, inplace=True)
@@ -60,20 +61,27 @@ coin_options = ['รวม', '0.25', '0.5', '1.0', '2.0', '5.0', '10.0']
 center_options = df['PLANTNAME'].unique().tolist()
 fiscal_years = sorted(df['FiscalYear'].unique().tolist())
 
+# เลือกตัวกรอง
 col1, col2, col3 = st.columns(3)
 with col1:
     selected_center = st.selectbox("เลือกศูนย์ (Center)", center_options)
 with col2:
     selected_coin = st.selectbox("เลือกเหรียญ (Coin)", coin_options)
-    coin_column = 'รวม'
 with col3:
     year_options = ["ทั้งหมด"] + fiscal_years[::-1]
     selected_year = st.selectbox("เลือกปีงบประมาณ (เพื่อดูกราฟเฉพาะช่วงปี)", year_options)
 
-# Run Forecast
-model, forecast, future, name, df_filtered = forecasting_fn(df, plant=selected_center, coin=selected_coin)
+# 🌡️ Slider สำหรับปรับระดับความเชื่อมั่น
+interval_width_percent = st.slider(
+    "ระดับความเชื่อมั่น (%) ที่ใช้สร้างช่วงการพยากรณ์ (Prediction Interval)",
+    min_value=50, max_value=99, value=80
+)
+interval_width = interval_width_percent / 100
 
-# ตั้งค่าหน่วยเหรียญ
+# Forecast
+model, forecast, future, name, df_filtered = forecasting_fn(df, plant=selected_center, coin=selected_coin, interval_width=interval_width)
+
+# หน่วยเหรียญ
 if selected_coin == 'รวม':
     coin_unit = 'บาท'
 elif float(selected_coin) < 1:
@@ -81,18 +89,18 @@ elif float(selected_coin) < 1:
 else:
     coin_unit = 'บาท'
 
-# คำนวณค่าพยากรณ์เฉลี่ย + ความไม่แน่นอนจาก Prophet
+# คำนวณค่าพยากรณ์และ Safety Stock
 forecast['safety_stock'] = forecast['yhat_upper'] - forecast['yhat']
 mean_forecast = forecast['yhat'].mean()
 mean_safety_stock = forecast['safety_stock'].mean()
 total_required = mean_forecast + mean_safety_stock
 
-# คำนวณแบบรายปี
+# รายปี
 mean_forecast_year = mean_forecast * 12
 safety_stock_year = mean_safety_stock * 12
 total_required_year = total_required * 12
 
-# คำนวณระดับการให้บริการจริงย้อนหลัง
+# ระดับการให้บริการย้อนหลัง
 merged = pd.merge(df_filtered, forecast[['ds', 'yhat']], on='ds', how='inner')
 service_level_empirical = np.mean(merged['y'] <= merged['yhat']) * 100
 
@@ -114,15 +122,16 @@ with col5:
 with col6:
     st.metric("ขั้นต่ำต่อปีที่ควรมี", f"{total_required_year:,.2f}")
 
-# แสดงระดับการให้บริการจริง
+# อธิบายระดับความมั่นใจ
 st.info(f"🔍 ระดับการให้บริการย้อนหลังจริง (Empirical Service Level): {service_level_empirical:.2f}%")
+st.info(f"🔧 ใช้ช่วงความเชื่อมั่นจาก Prophet ({interval_width_percent}%) เพื่อประเมิน Safety Stock โดยไม่ใช้ Z-score")
 
-# วาดกราฟ
+# แสดงกราฟ
 plot_forecast_plotly(name, df_filtered, forecast, fiscal_year=None if selected_year == "ทั้งหมด" else selected_year)
 
 # วิดีโอเสริม
 st.video("https://youtu.be/3KalfTj3xDw")
 
-# แสดงผลการทำนายทั้งหมด
+# ตารางผลการทำนาย
 if st.checkbox("แสดงผลการทำนายทั้งหมด"):
     st.dataframe(forecast[['ds', 'yhat', 'yhat_lower', 'yhat_upper']].reset_index(drop=True))
