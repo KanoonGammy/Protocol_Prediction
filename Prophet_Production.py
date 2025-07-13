@@ -142,6 +142,7 @@ month_order = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'O
 label_map = {'yhat': 'ค่าพยากรณ์', 'safety_stock': 'Safety Stock', 'total_required': 'รวมที่ควรมี'}
 
 # กราฟ grouped bar รายปี ครบ 5 ปี
+st.subheader("กราฟปริมาณเหรียญรายเดือนแยกตามปี พร้อมยอดรวม")
 for year in range(latest_date.year + 1, latest_date.year + 6):
     yearly_chart = forecast.copy()
     yearly_chart['year'] = yearly_chart['ds'].dt.year
@@ -180,7 +181,13 @@ for year in range(latest_date.year + 1, latest_date.year + 6):
     )
     fig_bar.update_traces(textposition='outside')
     fig_bar.update_layout(width=1000, height=500)
-    st.plotly_chart(fig_bar, use_container_width=True)
+        st.plotly_chart(fig_bar, use_container_width=True)
+
+    # แสดงยอดรวมในแต่ละปี
+    total_yhat = this_year_data['yhat'].sum()
+    total_safety = this_year_data['safety_stock'].sum()
+    total_total = this_year_data['total_required'].sum()
+    st.markdown(f"**ยอดรวมปี {year}:** ค่าพยากรณ์ = {total_yhat:,.2f}, Safety Stock = {total_safety:,.2f}, รวมที่ควรมี = {total_total:,.2f}")
 
 # ตัวเลือกแสดงผลเต็ม
 if st.checkbox("แสดงผลการทำนายทั้งหมด"):
