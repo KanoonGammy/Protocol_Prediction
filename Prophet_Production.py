@@ -51,7 +51,7 @@ def plot_forecast_plotly(name, df, forecast, fiscal_year=None):
 
 # ------------------ Streamlit App ------------------
 st.set_page_config(page_title="Forecasting Coins", layout="wide")
-st.title("\ud83d\udd2e Owl Mint Forecast Dashboard")
+st.title("Owl Mint Forecast Dashboard")
 
 # โหลดข้อมูล
 data = pd.read_excel("Data_Monthly.xlsx", index_col=0)
@@ -101,7 +101,7 @@ merged = pd.merge(df_filtered, forecast[['ds', 'yhat']], on='ds', how='inner')
 service_level_empirical = np.mean(merged['y'] <= merged['yhat']) * 100
 
 # แสดงผลสรุป
-st.subheader(f"\ud83d\udcca ผลการทำนายเหรียญ {selected_coin} {coin_unit} @ {selected_center}")
+st.subheader(f"ผลการทำนายเหรียญ {selected_coin} {coin_unit} @ {selected_center}")
 col1, col2, col3 = st.columns(3)
 with col1:
     st.metric("ค่าเฉลี่ยที่ควรมีต่อเดือน", f"{mean_forecast:,.2f}")
@@ -118,8 +118,8 @@ with col5:
 with col6:
     st.metric("ขั้นต่ำต่อปีที่ควรมี", f"{total_required_year:,.2f}")
 
-st.info(f"\ud83d\udd0d ระดับการให้บริการย้อนหลังจริง (Empirical Service Level): {service_level_empirical:.2f}%")
-st.info(f"\ud83d\udd27 ใช้ช่วงความเชื่อมั่นจาก Prophet ({interval_width_percent}%) เพื่อประเมิน Safety Stock")
+st.info(f"ระดับการให้บริการย้อนหลังจริง (Empirical Service Level): {service_level_empirical:.2f}%")
+st.info(f"ใช้ช่วงความเชื่อมั่นจาก Prophet ({interval_width_percent}%) เพื่อประเมิน Safety Stock")
 
 # แสดงกราฟ
 plot_forecast_plotly(name, df_filtered, forecast, fiscal_year=None if selected_year == "ทั้งหมด" else selected_year)
@@ -135,7 +135,7 @@ monthly_forecast_display = monthly_forecast[['month', 'yhat', 'safety_stock', 't
 monthly_forecast_display.columns = ['เดือน', 'ค่าพยากรณ์', 'Safety Stock', 'รวมที่ควรมี']
 monthly_forecast_display = monthly_forecast_display.round(2)
 
-st.subheader("\ud83d\udcc6 ตารางการเตรียมพร้อมเหรียญรายเดือน (12 เดือนข้างหน้า)")
+st.subheader("ตารางการเตรียมพร้อมเหรียญรายเดือน (12 เดือนข้างหน้า)")
 st.dataframe(monthly_forecast_display, use_container_width=True)
 
 # กราฟ grouped bar รายเดือน ม.ค. - ธ.ค.
@@ -176,7 +176,7 @@ fig_bar = px.bar(
     barmode='group',
     text_auto='.2s',
     labels={'month_name': 'เดือน', 'จำนวน': 'ปริมาณ'},
-    title=f'\ud83d\udcc5 ปริมาณเหรียญที่ต้องเตรียมแต่ละเดือน (ม.ค. - ธ.ค. {next_year})'
+    title=f'ปริมาณเหรียญที่ต้องเตรียมแต่ละเดือน (ม.ค. - ธ.ค. {next_year})'
 )
 fig_bar.update_layout(width=1000, height=500)
 st.plotly_chart(fig_bar, use_container_width=True)
