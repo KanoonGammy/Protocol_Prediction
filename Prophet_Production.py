@@ -3,7 +3,6 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 from prophet import Prophet
-from scipy.stats import norm
 
 # ------------------ ฟังก์ชันหลัก ------------------
 def forecasting_fn(df, plant, coin):
@@ -28,7 +27,8 @@ def forecasting_fn(df, plant, coin):
     df_filtered.reset_index(inplace=True)
     return model, forecast, future, name, df_filtered
 
-def plot_forecast_plotly(name, df, forecast, fiscal_year=None, bound_margin=0):
+# ------------------ ฟังก์ชันกราฟ ------------------
+def plot_forecast_plotly(name, df, forecast, fiscal_year=None):
     if fiscal_year:
         year_ad = fiscal_year - 543
         start_date = pd.to_datetime(f"{year_ad - 1}-10-01")
@@ -36,8 +36,8 @@ def plot_forecast_plotly(name, df, forecast, fiscal_year=None, bound_margin=0):
         df = df[(df['ds'] >= start_date) & (df['ds'] <= end_date)]
         forecast = forecast[(forecast['ds'] >= start_date) & (forecast['ds'] <= end_date)]
 
-    upper_bound = forecast['yhat'] + bound_margin
-    lower_bound = forecast['yhat'] - bound_margin
+    upper_bound = forecast['yhat_upper']
+    lower_bound = forecast['yhat_lower']
 
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=df['ds'], y=df['y'], mode='markers', name='Actual', marker=dict(color='rgba(137, 196, 244, 0.9)')))
@@ -69,13 +69,10 @@ with col3:
     year_options = ["ทั้งหมด"] + fiscal_years[::-1]
     selected_year = st.selectbox("เลือกปีงบประมาณ (เพื่อดูกราฟเฉพาะช่วงปี)", year_options)
 
-# 🔧 ปรับระดับการให้บริการ (Service Level)
-service_level = st.slider("ระดับการให้บริการ (Service Level %)", min_value=50, max_value=99, value=80)
-z = norm.ppf(service_level / 100) # ปรับปรุงการคำนวณ Z-score 
-
+# Run Forecast
 model, forecast, future, name, df_filtered = forecasting_fn(df, plant=selected_center, coin=selected_coin)
 
-# กำหนดหน่วยเหรียญ
+# ตั้งค่าหน่วยเหรียญ
 if selected_coin == 'รวม':
     coin_unit = 'บาท'
 elif float(selected_coin) < 1:
@@ -83,30 +80,28 @@ elif float(selected_coin) < 1:
 else:
     coin_unit = 'บาท'
 
-# คำนวณค่าคลาดเคลื่อนและ Bound
-merged = pd.merge(df_filtered, forecast[['ds', 'yhat']], on='ds', how='inner') # ปรับปรุงเพื่อป้องกันการ mismatch
-errors = merged['y'] - merged['yhat']
-
-std_error = np.std(errors)
-lead_time = 1  # เดือน
-safety_stock = z * std_error * np.sqrt(lead_time)
+# คำนวณค่าพยากรณ์เฉลี่ย + ความไม่แน่นอนจาก Prophet
+forecast['safety_stock'] = forecast['yhat_upper'] - forecast['yhat']
 mean_forecast = forecast['yhat'].mean()
-total_required = mean_forecast + safety_stock
+mean_safety_stock = forecast['safety_stock'].mean()
+total_required = mean_forecast + mean_safety_stock
 
-# คำนวณแบบรายปี (12 เดือน)
+# คำนวณแบบรายปี
 mean_forecast_year = mean_forecast * 12
-safety_stock_year = safety_stock * 12
+safety_stock_year = mean_safety_stock * 12
 total_required_year = total_required * 12
 
-# คำนวณระดับการให้บริการจริงจากข้อมูลย้อนหลัง
-service_level_empirical = np.mean(df_filtered['y'] <= forecast['yhat'].iloc[:len(df_filtered)]) * 100
+# คำนวณระดับการให้บริการจริงย้อนหลัง
+merged = pd.merge(df_filtered, forecast[['ds', 'yhat']], on='ds', how='inner')
+service_level_empirical = np.mean(merged['y'] <= merged['yhat']) * 100
 
-st.subheader(f"📊 ผลการทำนายเหรียญ {selected_coin} {coin_unit if selected_coin != 'รวม' else '' } @ {selected_center}")
+# แสดงผล
+st.subheader(f"📊 ผลการทำนายเหรียญ {selected_coin} {coin_unit if selected_coin != 'รวม' else ''} @ {selected_center}")
 col1, col2, col3 = st.columns(3)
 with col1:
     st.metric("ค่าเฉลี่ยที่ควรมีต่อเดือน", f"{mean_forecast:,.2f}")
 with col2:
-    st.metric(f"Safety Stock ต่อเดือน (ที่ระดับการให้บริการ: {service_level}%)", f"{safety_stock:,.2f}")
+    st.metric("Safety Stock ต่อเดือน (จากช่วงความมั่นใจ)", f"{mean_safety_stock:,.2f}")
 with col3:
     st.metric("ขั้นต่ำต่อเดือนที่ควรมี", f"{total_required:,.2f}")
 
@@ -114,18 +109,20 @@ col4, col5, col6 = st.columns(3)
 with col4:
     st.metric("ค่าเฉลี่ยที่ควรมีต่อปี", f"{mean_forecast_year:,.2f}")
 with col5:
-    st.metric(f"Safety Stock ต่อปี (ที่ระดับการให้บริการ:{service_level}%)", f"{safety_stock_year:,.2f}")
+    st.metric("Safety Stock ต่อปี (จากช่วงความมั่นใจ)", f"{safety_stock_year:,.2f}")
 with col6:
     st.metric("ขั้นต่ำต่อปีที่ควรมี", f"{total_required_year:,.2f}")
 
 # แสดงระดับการให้บริการจริง
 st.info(f"🔍 ระดับการให้บริการย้อนหลังจริง (Empirical Service Level): {service_level_empirical:.2f}%")
+st.info("🔧 ใช้ค่าช่วงความมั่นใจจาก Prophet (yhat_upper/yhat_lower) แทนการคำนวณ safety stock แบบเดิม")
 
-# แสดงกราฟตามปีงบประมาณที่เลือก
-plot_forecast_plotly(name, df_filtered, forecast, fiscal_year=None if selected_year == "ทั้งหมด" else selected_year, bound_margin=safety_stock)
+# วาดกราฟ
+plot_forecast_plotly(name, df_filtered, forecast, fiscal_year=None if selected_year == "ทั้งหมด" else selected_year)
 
+# วิดีโอเสริม
 st.video("https://youtu.be/3KalfTj3xDw")
 
-# 🔍 ฟังก์ชันดูทั้งหมด
+# แสดงผลการทำนายทั้งหมด
 if st.checkbox("แสดงผลการทำนายทั้งหมด"):
-    st.dataframe(forecast[['ds', 'yhat']].reset_index(drop=True))
+    st.dataframe(forecast[['ds', 'yhat', 'yhat_lower', 'yhat_upper']].reset_index(drop=True))
