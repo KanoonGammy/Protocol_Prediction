@@ -67,7 +67,7 @@ with col2:
     coin_column = 'รวม'
 with col3:
     year_options = ["ทั้งหมด"] + fiscal_years[::-1]
-    selected_year = st.selectbox("เลือกปีงบประมาณ ("เพื่อดูกราฟเบื้อช่วงปี)", year_options)
+    selected_year = st.selectbox("เลือกปีงบประมาณ (เพื่อดูกราฟเฉพาะช่วงปี)", year_options)
 
 # 🔧 ปรับระดับการให้บริการ (Service Level)
 service_level = st.slider("ระดับการให้บริการ (Service Level %)", min_value=50, max_value=99, value=80)
@@ -83,8 +83,7 @@ elif float(selected_coin) < 1:
 else:
     coin_unit = 'บาท'
 
-# คำนวนค่าคลาดเคลื่อนและ Bound
-
+# คำนวณค่าคลาดเคลื่อนและ Bound
 merged = pd.merge(df_filtered, forecast[['ds', 'yhat']], on='ds', how='inner') # ปรับปรุงเพื่อป้องกันการ mismatch
 errors = merged['y'] - merged['yhat']
 
@@ -94,12 +93,12 @@ safety_stock = z * std_error * np.sqrt(lead_time)
 mean_forecast = forecast['yhat'].mean()
 total_required = mean_forecast + safety_stock
 
-# คำนวนแบบรายปี (12 เดือน)
+# คำนวณแบบรายปี (12 เดือน)
 mean_forecast_year = mean_forecast * 12
 safety_stock_year = safety_stock * 12
 total_required_year = total_required * 12
 
-# คำนวนระดับการให้บริการจริงจากข้อมูลย้อนหลัง
+# คำนวณระดับการให้บริการจริงจากข้อมูลย้อนหลัง
 service_level_empirical = np.mean(df_filtered['y'] <= forecast['yhat'].iloc[:len(df_filtered)]) * 100
 
 st.subheader(f"📊 ผลการทำนายเหรียญ {selected_coin} {coin_unit if selected_coin != 'รวม' else '' } @ {selected_center}")
