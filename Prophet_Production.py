@@ -4,6 +4,7 @@ import numpy as np
 import plotly.graph_objects as go
 from prophet import Prophet
 from scipy.stats import norm
+
 # ------------------ ฟังก์ชันหลัก ------------------
 def forecasting_fn(df, plant, coin):
     name = f"{plant}: {coin}"
@@ -11,8 +12,14 @@ def forecasting_fn(df, plant, coin):
     df_filtered.columns = ['ds', 'y']
     df_filtered['ds'] = pd.to_datetime(df_filtered['ds'])
 
-    model = Prophet(changepoint_prior_scale=0.2)
-    model.add_seasonality(name='Quarterly', period=91.25, fourier_order=2)
+    model = Prophet(
+        changepoint_prior_scale=0.09983219300142447,
+        changepoint_range=0.8349896986260539,
+        seasonality_prior_scale=9.433629187865968,
+        seasonality_mode='additive',
+        yearly_seasonality=1,
+        growth='linear'
+    )
     model.fit(df_filtered)
 
     future = model.make_future_dataframe(periods=24, freq='ME')
@@ -60,7 +67,7 @@ with col2:
     coin_column = 'รวม'
 with col3:
     year_options = ["ทั้งหมด"] + fiscal_years[::-1]
-    selected_year = st.selectbox("เลือกปีงบประมาณ (เพื่อดูกราฟเฉพาะช่วงปี)", year_options)
+    selected_year = st.selectbox("เลือกปีงบประมาณ ("เพื่อดูกราฟเบื้อช่วงปี)", year_options)
 
 # 🔧 ปรับระดับการให้บริการ (Service Level)
 service_level = st.slider("ระดับการให้บริการ (Service Level %)", min_value=50, max_value=99, value=80)
@@ -76,7 +83,7 @@ elif float(selected_coin) < 1:
 else:
     coin_unit = 'บาท'
 
-# คำนวณค่าคลาดเคลื่อนและ Bound
+# คำนวนค่าคลาดเคลื่อนและ Bound
 
 merged = pd.merge(df_filtered, forecast[['ds', 'yhat']], on='ds', how='inner') # ปรับปรุงเพื่อป้องกันการ mismatch
 errors = merged['y'] - merged['yhat']
@@ -87,12 +94,12 @@ safety_stock = z * std_error * np.sqrt(lead_time)
 mean_forecast = forecast['yhat'].mean()
 total_required = mean_forecast + safety_stock
 
-# คำนวณแบบรายปี (12 เดือน)
+# คำนวนแบบรายปี (12 เดือน)
 mean_forecast_year = mean_forecast * 12
 safety_stock_year = safety_stock * 12
 total_required_year = total_required * 12
 
-# คำนวณระดับการให้บริการจริงจากข้อมูลย้อนหลัง
+# คำนวนระดับการให้บริการจริงจากข้อมูลย้อนหลัง
 service_level_empirical = np.mean(df_filtered['y'] <= forecast['yhat'].iloc[:len(df_filtered)]) * 100
 
 st.subheader(f"📊 ผลการทำนายเหรียญ {selected_coin} {coin_unit if selected_coin != 'รวม' else '' } @ {selected_center}")
