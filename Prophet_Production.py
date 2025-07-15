@@ -42,8 +42,6 @@ def plot_forecast_plotly(name, df, forecast, fiscal_year=None):
     lower_bound = forecast['yhat_lower']
 
     fig = go.Figure()
-
-    # แสดงค่าจริงเป็นจุดสีเขียว
     fig.add_trace(go.Scatter(
         x=df['ds'],
         y=df['y'],
