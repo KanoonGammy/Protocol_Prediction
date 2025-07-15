@@ -42,11 +42,60 @@ def plot_forecast_plotly(name, df, forecast, fiscal_year=None):
     lower_bound = forecast['yhat_lower']
 
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=df['ds'], y=df['y'], mode='markers', name='Actual', marker=dict(color='rgba(137, 196, 244, 0.9)')))
-    fig.add_trace(go.Scatter(x=forecast['ds'], y=forecast['yhat'], mode='lines', name='Forecast', line=dict(color='rgba(255, 99, 132, 0.9)')))
-    fig.add_trace(go.Scatter(x=forecast['ds'], y=upper_bound, mode='lines', name='Upper Bound', line=dict(width=0), showlegend=False))
-    fig.add_trace(go.Scatter(x=forecast['ds'], y=lower_bound, mode='lines', name='Forecast Range', fill='tonexty', line=dict(width=0), fillcolor='rgba(255, 99, 132, 0.2)', showlegend=True))
-    fig.update_layout(title=f'{name} Forecasting (Prophet)', xaxis_title='Month', yaxis_title='Coins', width=1000, height=500)
+
+    # แสดงค่าจริงเป็นจุดสีเขียว
+    fig.add_trace(go.Scatter(
+        x=df['ds'],
+        y=df['y'],
+        mode='markers',
+        name='Actual',
+        marker=dict(color='green', size=8, symbol='circle')
+    ))
+
+    # แสดงค่าพยากรณ์เป็นเส้น
+    fig.add_trace(go.Scatter(
+        x=forecast['ds'],
+        y=forecast['yhat'],
+        mode='lines',
+        name='Forecast',
+        line=dict(color='rgba(255, 99, 132, 0.9)', width=3)
+    ))
+
+    # ช่วงความเชื่อมั่นโปร่งแสง
+    fig.add_trace(go.Scatter(
+        x=forecast['ds'],
+        y=upper_bound,
+        mode='lines',
+        line=dict(width=0),
+        showlegend=False
+    ))
+    fig.add_trace(go.Scatter(
+        x=forecast['ds'],
+        y=lower_bound,
+        mode='lines',
+        fill='tonexty',
+        fillcolor='rgba(255, 99, 132, 0.15)',
+        line=dict(width=0),
+        name='Confidence Interval'
+    ))
+
+    fig.update_layout(
+        title=f'{name} Forecasting (Prophet)',
+        xaxis_title='Month',
+        yaxis_title='Coins (ล้านเหรียญ)',
+        width=1100,
+        height=550,
+        barmode='overlay',
+        legend=dict(
+            orientation='h',
+            yanchor='bottom',
+            y=1.05,
+            xanchor='right',
+            x=1
+        ),
+        margin=dict(l=50, r=50, t=80, b=50)
+    )
+
     st.plotly_chart(fig, use_container_width=True)
 
 # ------------------ Streamlit App ------------------
@@ -54,7 +103,7 @@ st.set_page_config(page_title="Forecasting Coins", layout="wide")
 st.title("Owl Mint Forecast Dashboard")
 
 # โหลดข้อมูล
-data = pd.read_excel("Data_Monthly.xlsx", index_col=0)
+data = pd.read_excel("Data_Monthly_Updated.xlsx", index_col=0)
 df = data.copy()
 df.rename(columns={'Fiscal_Year': 'FiscalYear'}, inplace=True)
 
@@ -101,7 +150,7 @@ merged = pd.merge(df_filtered, forecast[['ds', 'yhat']], on='ds', how='inner')
 service_level_empirical = np.mean(merged['y'] <= merged['yhat']) * 100
 
 # แสดงผลสรุป
-st.subheader(f"ผลการทำนายเหรียญ {selected_coin} {coin_unit} @ {selected_center}")
+st.subheader(f"ผลการทำนายเหรียญ {selected_coin} {coin_unit} @ {selected_center}: ล้านเหรียญ")
 col1, col2, col3 = st.columns(3)
 with col1:
     st.metric("ค่าเฉลี่ยที่ควรมีต่อเดือน", f"{mean_forecast:,.2f}")
@@ -150,7 +199,7 @@ for year in range(latest_date.year + 1, latest_date.year + 6):
     yearly_chart['month_name'] = yearly_chart['ds'].dt.strftime('%b')
     yearly_chart['safety_stock'] = yearly_chart['yhat_upper'] - yearly_chart['yhat']
     yearly_chart['total_required'] = yearly_chart['yhat_upper']
-    
+
     this_year_data = yearly_chart[yearly_chart['year'] == year]
     monthly_grouped = this_year_data.groupby(['month', 'month_name']).agg({
         'yhat': 'mean',
@@ -175,11 +224,12 @@ for year in range(latest_date.year + 1, latest_date.year + 6):
         y='จำนวน',
         color='ประเภท',
         barmode='group',
-        text=monthly_long['จำนวน'].apply(lambda x: f"{x/1e6:.2f}M"),
+        text=monthly_long['จำนวน'].apply(lambda x: f"{x:,.2f}"),
         labels={'month_name': 'เดือน', 'จำนวน': 'ปริมาณ'},
         title=f'ปริมาณเหรียญที่ต้องเตรียมแต่ละเดือน ({year})'
     )
     fig_bar.update_traces(textposition='outside')
+
     # คำนวณยอดรวมก่อนสร้าง annotation
     total_yhat = this_year_data['yhat'].sum()
     total_safety = this_year_data['safety_stock'].sum()
@@ -202,12 +252,32 @@ for year in range(latest_date.year + 1, latest_date.year + 6):
     )
     st.plotly_chart(fig_bar, use_container_width=True)
 
-        # แสดงยอดรวมในแต่ละปี
-    total_yhat = this_year_data['yhat'].sum()
-    total_safety = this_year_data['safety_stock'].sum()
-    total_total = this_year_data['total_required'].sum()
-    
-
-# ตัวเลือกแสดงผลเต็ม
 if st.checkbox("แสดงผลการทำนายทั้งหมด"):
-    st.dataframe(forecast[['ds', 'yhat', 'yhat_lower', 'yhat_upper']].reset_index(drop=True))
+    full_results = pd.merge(
+        forecast[['ds', 'yhat', 'yhat_lower', 'yhat_upper']],
+        df_filtered[['ds', 'y']],
+        on='ds',
+        how='left'
+    )
+    full_results.rename(columns={
+        'ds': 'วันที่',
+        'y': 'ค่าจริง (Actual)',
+        'yhat': 'ค่าพยากรณ์ (Forecast)',
+        'yhat_lower': 'ช่วงต่ำสุด (Lower Bound)',
+        'yhat_upper': 'ช่วงสูงสุด (Upper Bound)'
+    }, inplace=True)
+
+    # เพิ่มคอลัมน์ส่วนต่างและคำนวณ RMSE, MAPE
+    full_results['ส่วนต่าง (Actual - Forecast)'] = full_results['ค่าจริง (Actual)'] - full_results['ค่าพยากรณ์ (Forecast)']
+
+    actual = full_results['ค่าจริง (Actual)']
+    forecast_vals = full_results['ค่าพยากรณ์ (Forecast)']
+    rmse = np.sqrt(np.mean((actual - forecast_vals) ** 2))
+    mape = np.mean(np.abs((actual - forecast_vals) / actual)) * 100 if not (actual == 0).all() else np.nan
+
+    full_results = full_results.round(2)
+    st.dataframe(full_results.reset_index(drop=True), use_container_width=True)
+
+    # แสดง RMSE และ MAPE
+    st.write(f"**RMSE:** {rmse:,.2f}")
+    st.write(f"**MAPE:** {mape:,.2f}%")
