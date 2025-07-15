@@ -49,7 +49,7 @@ def plot_forecast_plotly(name, df, forecast, fiscal_year=None):
         y=df['y'],
         mode='markers',
         name='Actual',
-        marker=dict(color='green', size=8, symbol='circle')
+        marker=dict(color='blue', size=8, symbol='circle')
     ))
 
     # แสดงค่าพยากรณ์เป็นเส้น
