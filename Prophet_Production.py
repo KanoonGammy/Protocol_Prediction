@@ -4,16 +4,24 @@ import numpy as np
 import plotly.graph_objects as go
 import plotly.express as px
 from prophet import Prophet
+from scipy.stats import norm
 
 # ------------------ ฟังก์ชันหลัก ------------------
-def forecasting_fn(df, plant, coin, interval_width):
+def forecasting_fn(df, plant, coin):
+    """
+    ฟังก์ชันสำหรับสร้างโมเดล Prophet และพยากรณ์ข้อมูล
+    หมายเหตุ: ตัด interval_width ออก เพราะจะคำนวณ Safety Stock แยก
+    """
     name = f"{plant}: {coin}"
     df_filtered = df[df['PLANTNAME'] == plant][['date', coin]]
     df_filtered.columns = ['ds', 'y']
     df_filtered['ds'] = pd.to_datetime(df_filtered['ds'])
+    
+    # ทำให้ข้อมูลไม่มีค่า Null เพื่อให้โมเดลทำงานได้
+    df_filtered.dropna(inplace=True)
 
     model = Prophet(
-        interval_width=interval_width,
+        interval_width=0.95,  # กำหนดค่าคงที่สำหรับแสดงผลบนกราฟเท่านั้น
         changepoint_prior_scale=0.09983219300142447,
         changepoint_range=0.8349896986260539,
         seasonality_prior_scale=9.433629187865968,
@@ -50,7 +58,6 @@ def plot_forecast_plotly(name, df, forecast, fiscal_year=None):
         marker=dict(color='blue', size=8, symbol='circle')
     ))
 
-    # แสดงค่าพยากรณ์เป็นเส้น
     fig.add_trace(go.Scatter(
         x=forecast['ds'],
         y=forecast['yhat'],
@@ -59,7 +66,7 @@ def plot_forecast_plotly(name, df, forecast, fiscal_year=None):
         line=dict(color='rgba(255, 99, 132, 0.9)', width=3)
     ))
 
-    # ช่วงความเชื่อมั่นโปร่งแสง
+    # ช่วงความเชื่อมั่น (แสดงผลเพื่อดูแนวโน้ม ไม่เกี่ยวกับ Safety Stock)
     fig.add_trace(go.Scatter(
         x=forecast['ds'],
         y=upper_bound,
@@ -74,7 +81,7 @@ def plot_forecast_plotly(name, df, forecast, fiscal_year=None):
         fill='tonexty',
         fillcolor='rgba(255, 99, 132, 0.15)',
         line=dict(width=0),
-        name='Confidence Interval'
+        name='Confidence Interval (95%)'
     ))
 
     fig.update_layout(
@@ -98,7 +105,7 @@ def plot_forecast_plotly(name, df, forecast, fiscal_year=None):
 
 # ------------------ Streamlit App ------------------
 st.set_page_config(page_title="Forecasting Coins", layout="wide")
-st.title("Owl Mint Forecast Dashboard")
+st.title("🦉 Owl Mint Forecast Dashboard")
 
 # โหลดข้อมูล
 data = pd.read_excel("Data_Monthly_Updated.xlsx", index_col=0)
@@ -119,61 +126,76 @@ with col3:
     year_options = ["ทั้งหมด"] + fiscal_years[::-1]
     selected_year = st.selectbox("เลือกปีงบประมาณ (เพื่อดูกราฟเฉพาะช่วงปี)", year_options)
 
-# Slider ความเชื่อมั่น
-interval_width_percent = st.slider(
-    "ระดับความเชื่อมั่น (%) ที่ใช้สร้างช่วงการพยากรณ์ (Prediction Interval)",
-    min_value=50, max_value=99, value=80
+# Slider ระดับการให้บริการ (Service Level)
+service_level_percent = st.slider(
+    "ระดับการให้บริการที่ต้องการ (%) เพื่อคำนวณ Safety Stock (Service Level)",
+    min_value=50.0, max_value=99.9, value=95.0, step=0.1
 )
-interval_width = interval_width_percent / 100
+service_level = service_level_percent / 100
 
 # Forecast
-model, forecast, future, name, df_filtered = forecasting_fn(df, plant=selected_center, coin=selected_coin, interval_width=interval_width)
+model, forecast, future, name, df_filtered = forecasting_fn(df, plant=selected_center, coin=selected_coin)
+
+# --- คำนวณ SAFETY STOCK แบบใหม่ ---
+# 1. รวมข้อมูลจริงในอดีตกับค่าพยากรณ์ในอดีตเข้าด้วยกัน
+merged_historical = pd.merge(df_filtered, forecast[['ds', 'yhat']], on='ds', how='inner')
+
+# 2. คำนวณ Forecast Error (ค่าจริง - ค่าพยากรณ์)
+merged_historical['error'] = merged_historical['y'] - merged_historical['yhat']
+
+# 3. คำนวณ Standard Deviation ของ Error
+std_error = merged_historical['error'].std()
+
+# 4. หาค่า Z-score จาก Service Level ที่เลือก
+z_score = norm.ppf(service_level)
+
+# 5. คำนวณ Safety Stock (ป้องกันค่าติดลบหาก Service Level < 50%)
+safety_stock_value = max(0, z_score * std_error) if pd.notna(std_error) else 0
+
+# กำหนดค่า Safety Stock ที่คำนวณได้ให้กับทุกช่วงเวลาในอนาคต
+forecast['safety_stock'] = safety_stock_value
+# -----------------------------------
 
 # หน่วยเหรียญ
 coin_unit = 'บาท' if selected_coin == 'รวม' or float(selected_coin) >= 1 else 'สตางค์'
 
-# คำนวณค่าพยากรณ์และ Safety Stock
-forecast['safety_stock'] = forecast['yhat_upper'] - forecast['yhat']
+# คำนวณค่าเฉลี่ย
 mean_forecast = forecast['yhat'].mean()
-mean_safety_stock = forecast['safety_stock'].mean()
-total_required = mean_forecast + mean_safety_stock
+total_required = mean_forecast + safety_stock_value
 
 # รายปี
 mean_forecast_year = mean_forecast * 12
-safety_stock_year = mean_safety_stock * 12
+safety_stock_year = safety_stock_value * 12
 total_required_year = total_required * 12
-
-# ระดับการให้บริการย้อนหลัง
-merged = pd.merge(df_filtered, forecast[['ds', 'yhat']], on='ds', how='inner')
-service_level_empirical = np.mean(merged['y'] <= merged['yhat']) * 100
 
 # แสดงผลสรุป
 st.subheader(f"ผลการทำนายเหรียญ {selected_coin} {coin_unit} @ {selected_center}: ล้านเหรียญ")
 col1, col2, col3 = st.columns(3)
 with col1:
-    st.metric("ค่าเฉลี่ยที่ควรมีต่อเดือน", f"{mean_forecast:,.2f}")
+    st.metric("ค่าเฉลี่ยที่ควรมีต่อเดือน (Forecast)", f"{mean_forecast:,.2f}")
 with col2:
-    st.metric("Safety Stock ต่อเดือน (จากช่วงความมั่นใจ)", f"{mean_safety_stock:,.2f}")
+    # แสดงค่า Safety Stock ที่คำนวณได้
+    st.metric("Safety Stock ต่อเดือน (คำนวณจาก Forecast Error)", f"{safety_stock_value:,.2f}")
 with col3:
-    st.metric("ขั้นต่ำต่อเดือนที่ควรมี", f"{total_required:,.2f}")
+    st.metric("ขั้นต่ำต่อเดือนที่ควรมี (Forecast + Safety Stock)", f"{total_required:,.2f}")
 
 col4, col5, col6 = st.columns(3)
 with col4:
     st.metric("ค่าเฉลี่ยที่ควรมีต่อปี", f"{mean_forecast_year:,.2f}")
 with col5:
-    st.metric("Safety Stock ต่อปี (จากช่วงความมั่นใจ)", f"{safety_stock_year:,.2f}")
+    st.metric("Safety Stock ต่อปี", f"{safety_stock_year:,.2f}")
 with col6:
     st.metric("ขั้นต่ำต่อปีที่ควรมี", f"{total_required_year:,.2f}")
 
-st.info(f"ระดับการให้บริการย้อนหลังจริง (Empirical Service Level): {service_level_empirical:.2f}%")
-st.info(f"ใช้ช่วงความเชื่อมั่นจาก Prophet ({interval_width_percent}%) เพื่อประเมิน Safety Stock")
+st.info(f"Safety Stock คำนวณจากความคลาดเคลื่อนของการพยากรณ์ในอดีต ณ ระดับการให้บริการ (Service Level) {service_level_percent:.1f}% (Z-score: {z_score:.2f}, Std Dev of Error: {std_error:.2f})")
 
 # แสดงกราฟ
 plot_forecast_plotly(name, df_filtered, forecast, fiscal_year=None if selected_year == "ทั้งหมด" else selected_year)
 
+
 # ตารางรายเดือน (เฉพาะอนาคต 12 เดือน)
-monthly_forecast = forecast[['ds', 'yhat', 'yhat_upper']].copy()
-monthly_forecast['safety_stock'] = forecast['yhat_upper'] - forecast['yhat']
+monthly_forecast = forecast[['ds', 'yhat']].copy()
+monthly_forecast['safety_stock'] = safety_stock_value # ใช้ค่าที่คำนวณใหม่
 monthly_forecast['total_required'] = monthly_forecast['yhat'] + monthly_forecast['safety_stock']
 monthly_forecast['month'] = monthly_forecast['ds'].dt.strftime('%b %Y')
 latest_date = df_filtered['ds'].max()
@@ -185,6 +207,8 @@ monthly_forecast_display = monthly_forecast_display.round(2)
 st.subheader("ตารางการเตรียมพร้อมเหรียญรายเดือน (12 เดือนข้างหน้า)")
 st.dataframe(monthly_forecast_display, use_container_width=True)
 
+# (ส่วนที่เหลือของโค้ดสำหรับการสร้างกราฟและตารางยังคงเดิม แต่จะใช้ค่า Safety Stock ใหม่โดยอัตโนมัติ)
+# ... (วางโค้ดส่วนที่เหลือตั้งแต่ กราฟ grouped bar เป็นต้นไป ที่นี่)
 month_order = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 label_map = {'yhat': 'ค่าพยากรณ์', 'safety_stock': 'Safety Stock', 'total_required': 'รวมที่ควรมี'}
 
@@ -195,8 +219,8 @@ for year in range(latest_date.year + 1, latest_date.year + 6):
     yearly_chart['year'] = yearly_chart['ds'].dt.year
     yearly_chart['month'] = yearly_chart['ds'].dt.month
     yearly_chart['month_name'] = yearly_chart['ds'].dt.strftime('%b')
-    yearly_chart['safety_stock'] = yearly_chart['yhat_upper'] - yearly_chart['yhat']
-    yearly_chart['total_required'] = yearly_chart['yhat_upper']
+    yearly_chart['safety_stock'] = safety_stock_value # ใช้ค่าใหม่
+    yearly_chart['total_required'] = yearly_chart['yhat'] + yearly_chart['safety_stock'] # คำนวณใหม่
 
     this_year_data = yearly_chart[yearly_chart['year'] == year]
     monthly_grouped = this_year_data.groupby(['month', 'month_name']).agg({
@@ -228,7 +252,6 @@ for year in range(latest_date.year + 1, latest_date.year + 6):
     )
     fig_bar.update_traces(textposition='outside')
 
-    # คำนวณยอดรวมก่อนสร้าง annotation
     total_yhat = this_year_data['yhat'].sum()
     total_safety = this_year_data['safety_stock'].sum()
     total_total = this_year_data['total_required'].sum()
@@ -250,6 +273,7 @@ for year in range(latest_date.year + 1, latest_date.year + 6):
     )
     st.plotly_chart(fig_bar, use_container_width=True)
 
+
 if st.checkbox("แสดงผลการทำนายทั้งหมด"):
     full_results = pd.merge(
         forecast[['ds', 'yhat', 'yhat_lower', 'yhat_upper']],
@@ -265,17 +289,25 @@ if st.checkbox("แสดงผลการทำนายทั้งหมด"
         'yhat_upper': 'ช่วงสูงสุด (Upper Bound)'
     }, inplace=True)
 
-    # เพิ่มคอลัมน์ส่วนต่างและคำนวณ RMSE, MAPE
     full_results['ส่วนต่าง (Actual - Forecast)'] = full_results['ค่าจริง (Actual)'] - full_results['ค่าพยากรณ์ (Forecast)']
 
-    actual = full_results['ค่าจริง (Actual)']
-    forecast_vals = full_results['ค่าพยากรณ์ (Forecast)']
-    rmse = np.sqrt(np.mean((actual - forecast_vals) ** 2))
-    mape = np.mean(np.abs((actual - forecast_vals) / actual)) * 100 if not (actual == 0).all() else np.nan
+    # คำนวณ RMSE และ MAPE จากข้อมูลที่มีค่าจริงเท่านั้น
+    valid_results = full_results.dropna(subset=['ค่าจริง (Actual)', 'ค่าพยากรณ์ (Forecast)'])
+    actual = valid_results['ค่าจริง (Actual)']
+    forecast_vals = valid_results['ค่าพยากรณ์ (Forecast)']
+    
+    # ตรวจสอบว่ามีข้อมูลสำหรับคำนวณหรือไม่
+    if not actual.empty:
+        rmse = np.sqrt(np.mean((actual - forecast_vals) ** 2))
+        # ป้องกันการหารด้วยศูนย์สำหรับ MAPE
+        mape = np.mean(np.abs((actual - forecast_vals) / actual[actual != 0])) * 100
+    else:
+        rmse = np.nan
+        mape = np.nan
+
 
     full_results = full_results.round(2)
     st.dataframe(full_results.reset_index(drop=True), use_container_width=True)
 
-    # แสดง RMSE และ MAPE
-    st.write(f"**RMSE:** {rmse:,.2f}")
-    st.write(f"**MAPE:** {mape:,.2f}%")
+    st.write(f"**RMSE (Root Mean Square Error):** {rmse:,.2f}")
+    st.write(f"**MAPE (Mean Absolute Percentage Error):** {mape:,.2f}%")
