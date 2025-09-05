@@ -4,310 +4,282 @@ import numpy as np
 import plotly.graph_objects as go
 import plotly.express as px
 from prophet import Prophet
-from scipy.stats import norm
+import locale
+from sklearn.metrics import r2_score
 
-# ------------------ ฟังก์ชันหลัก ------------------
-def forecasting_fn(df, plant, coin):
-    """
-    ฟังก์ชันสำหรับสร้างโมเดล Prophet และพยากรณ์ข้อมูล
-    หมายเหตุ: ตัด interval_width ออก เพราะจะคำนวณ Safety Stock แยก
-    """
-    name = f"{plant}: {coin}"
-    df_filtered = df[df['PLANTNAME'] == plant][['date', coin]]
-    df_filtered.columns = ['ds', 'y']
-    df_filtered['ds'] = pd.to_datetime(df_filtered['ds'])
+# ------------------ การตั้งค่าเริ่มต้น ------------------
+st.set_page_config(page_title="AI Forecast Dashboard", layout="wide", initial_sidebar_state="expanded")
+try:
+    locale.setlocale(locale.LC_TIME, 'th_TH')
+except locale.Error:
+    st.warning("ไม่สามารถตั้งค่า Locale ภาษาไทยได้ อาจแสดงผลเดือนเป็นภาษาอังกฤษ")
+
+# ------------------ Custom CSS for Tech UI ------------------
+st.markdown("""
+<style>
+    /* Main App Font and Background */
+    html, body, [class*="st-"] {
+        font-family: 'IBM Plex Sans', sans-serif;
+    }
+    .main {
+        background-color: #0E1117;
+    }
     
-    # ทำให้ข้อมูลไม่มีค่า Null เพื่อให้โมเดลทำงานได้
-    df_filtered.dropna(inplace=True)
+    /* Sidebar Styling */
+    [data-testid="stSidebar"] {
+        background-color: #1E1E2F;
+        border-right: 2px solid #4A4A6A;
+    }
+    [data-testid="stSidebar"] h2, [data-testid="stSidebar"] .st-emotion-cache-10oheor {
+        color: #FFFFFF;
+    }
 
-    model = Prophet(
-        interval_width=0.95,  # กำหนดค่าคงที่สำหรับแสดงผลบนกราฟเท่านั้น
-        changepoint_prior_scale=0.09983219300142447,
-        changepoint_range=0.8349896986260539,
-        seasonality_prior_scale=9.433629187865968,
-        seasonality_mode='additive',
-        yearly_seasonality=1,
-        growth='linear'
-    )
-    model.fit(df_filtered)
+    /* Metric Box Styling */
+    [data-testid="stMetric"] {
+        background-color: rgba(44, 51, 64, 0.3);
+        border: 1px solid #4A4A6A;
+        border-radius: 12px;
+        padding: 20px;
+        box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
+        backdrop-filter: blur(5px);
+        -webkit-backdrop-filter: blur(5px);
+    }
+    [data-testid="stMetricLabel"] {
+        color: #A0AEC0; /* Light gray for label */
+    }
+    [data-testid="stMetricValue"] {
+        color: #FFFFFF;
+        font-size: 1.75rem;
+    }
 
-    future = model.make_future_dataframe(periods=60, freq='ME')
-    forecast = model.predict(future)
+    /* Headers and Titles */
+    h1 {
+        color: #FFFFFF;
+        text-shadow: 0 0 10px rgba(0, 191, 255, 0.5);
+    }
+    h2, h3 {
+        color: #E2E8F0;
+        border-left: 4px solid #00BFFF;
+        padding-left: 10px;
+    }
 
-    df_filtered.reset_index(inplace=True)
-    return model, forecast, future, name, df_filtered
-
-# ------------------ ฟังก์ชันกราฟรวม ------------------
-def plot_forecast_plotly(name, df, forecast, fiscal_year=None):
-    if fiscal_year:
-        year_ad = fiscal_year - 543
-        start_date = pd.to_datetime(f"{year_ad - 1}-10-01")
-        end_date = pd.to_datetime(f"{year_ad}-09-30")
-        df = df[(df['ds'] >= start_date) & (df['ds'] <= end_date)]
-        forecast = forecast[(forecast['ds'] >= start_date) & (forecast['ds'] <= end_date)]
-
-    upper_bound = forecast['yhat_upper']
-    lower_bound = forecast['yhat_lower']
-
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(
-        x=df['ds'],
-        y=df['y'],
-        mode='markers',
-        name='Actual',
-        marker=dict(color='blue', size=8, symbol='circle')
-    ))
-
-    fig.add_trace(go.Scatter(
-        x=forecast['ds'],
-        y=forecast['yhat'],
-        mode='lines',
-        name='Forecast',
-        line=dict(color='rgba(255, 99, 132, 0.9)', width=3)
-    ))
-
-    # ช่วงความเชื่อมั่น (แสดงผลเพื่อดูแนวโน้ม ไม่เกี่ยวกับ Safety Stock)
-    fig.add_trace(go.Scatter(
-        x=forecast['ds'],
-        y=upper_bound,
-        mode='lines',
-        line=dict(width=0),
-        showlegend=False
-    ))
-    fig.add_trace(go.Scatter(
-        x=forecast['ds'],
-        y=lower_bound,
-        mode='lines',
-        fill='tonexty',
-        fillcolor='rgba(255, 99, 132, 0.15)',
-        line=dict(width=0),
-        name='Confidence Interval (95%)'
-    ))
-
-    fig.update_layout(
-        title=f'{name} Forecasting (Prophet)',
-        xaxis_title='Month',
-        yaxis_title='Coins (ล้านเหรียญ)',
-        width=1100,
-        height=550,
-        barmode='overlay',
-        legend=dict(
-            orientation='h',
-            yanchor='bottom',
-            y=1.05,
-            xanchor='right',
-            x=1
-        ),
-        margin=dict(l=50, r=50, t=80, b=50)
-    )
-
-    st.plotly_chart(fig, use_container_width=True)
-
-# ------------------ Streamlit App ------------------
-st.set_page_config(page_title="Forecasting Coins", layout="wide")
-st.title("🦉 Owl Mint Forecast Dashboard")
-
-# โหลดข้อมูล
-data = pd.read_excel("Data_Monthly_Updated.xlsx", index_col=0)
-df = data.copy()
-df.rename(columns={'Fiscal_Year': 'FiscalYear'}, inplace=True)
-
-coin_options = ['รวม', '0.25', '0.5', '1.0', '2.0', '5.0', '10.0']
-center_options = df['PLANTNAME'].unique().tolist()
-fiscal_years = sorted(df['FiscalYear'].unique().tolist())
-
-# เลือกตัวกรอง
-col1, col2, col3 = st.columns(3)
-with col1:
-    selected_center = st.selectbox("เลือกศูนย์ (Center)", center_options)
-with col2:
-    selected_coin = st.selectbox("เลือกเหรียญ (Coin)", coin_options)
-with col3:
-    year_options = ["ทั้งหมด"] + fiscal_years[::-1]
-    selected_year = st.selectbox("เลือกปีงบประมาณ (เพื่อดูกราฟเฉพาะช่วงปี)", year_options)
-
-# Slider ระดับการให้บริการ (Service Level)
-service_level_percent = st.slider(
-    "ระดับการให้บริการที่ต้องการ (%) เพื่อคำนวณ Safety Stock (Service Level)",
-    min_value=50.0, max_value=99.9, value=95.0, step=0.1
-)
-service_level = service_level_percent / 100
-
-# Forecast
-model, forecast, future, name, df_filtered = forecasting_fn(df, plant=selected_center, coin=selected_coin)
-
-# --- คำนวณ SAFETY STOCK แบบใหม่ ---
-# 1. รวมข้อมูลจริงในอดีตกับค่าพยากรณ์ในอดีตเข้าด้วยกัน
-merged_historical = pd.merge(df_filtered, forecast[['ds', 'yhat']], on='ds', how='inner')
-
-# 2. คำนวณ Forecast Error (ค่าจริง - ค่าพยากรณ์)
-merged_historical['error'] = merged_historical['y'] - merged_historical['yhat']
-
-# 3. คำนวณ Standard Deviation ของ Error
-std_error = merged_historical['error'].std()
-
-# 4. หาค่า Z-score จาก Service Level ที่เลือก
-z_score = norm.ppf(service_level)
-
-# 5. คำนวณ Safety Stock (ป้องกันค่าติดลบหาก Service Level < 50%)
-safety_stock_value = max(0, z_score * std_error) if pd.notna(std_error) else 0
-
-# กำหนดค่า Safety Stock ที่คำนวณได้ให้กับทุกช่วงเวลาในอนาคต
-forecast['safety_stock'] = safety_stock_value
-# -----------------------------------
-
-# หน่วยเหรียญ
-coin_unit = 'บาท' if selected_coin == 'รวม' or float(selected_coin) >= 1 else 'สตางค์'
-
-# คำนวณค่าเฉลี่ย
-mean_forecast = forecast['yhat'].mean()
-total_required = mean_forecast + safety_stock_value
-
-# รายปี
-mean_forecast_year = mean_forecast * 12
-safety_stock_year = safety_stock_value * 12
-total_required_year = total_required * 12
-
-# แสดงผลสรุป
-st.subheader(f"ผลการทำนายเหรียญ {selected_coin} {coin_unit} @ {selected_center}: ล้านเหรียญ")
-col1, col2, col3 = st.columns(3)
-with col1:
-    st.metric("ค่าเฉลี่ยที่ควรมีต่อเดือน (Forecast)", f"{mean_forecast:,.2f}")
-with col2:
-    # แสดงค่า Safety Stock ที่คำนวณได้
-    st.metric("Safety Stock ต่อเดือน (คำนวณจาก Forecast Error)", f"{safety_stock_value:,.2f}")
-with col3:
-    st.metric("ขั้นต่ำต่อเดือนที่ควรมี (Forecast + Safety Stock)", f"{total_required:,.2f}")
-
-col4, col5, col6 = st.columns(3)
-with col4:
-    st.metric("ค่าเฉลี่ยที่ควรมีต่อปี", f"{mean_forecast_year:,.2f}")
-with col5:
-    st.metric("Safety Stock ต่อปี", f"{safety_stock_year:,.2f}")
-with col6:
-    st.metric("ขั้นต่ำต่อปีที่ควรมี", f"{total_required_year:,.2f}")
-
-st.info(f"Safety Stock คำนวณจากความคลาดเคลื่อนของการพยากรณ์ในอดีต ณ ระดับการให้บริการ (Service Level) {service_level_percent:.1f}% (Z-score: {z_score:.2f}, Std Dev of Error: {std_error:.2f})")
-
-# แสดงกราฟ
-plot_forecast_plotly(name, df_filtered, forecast, fiscal_year=None if selected_year == "ทั้งหมด" else selected_year)
-
-
-# ตารางรายเดือน (เฉพาะอนาคต 12 เดือน)
-monthly_forecast = forecast[['ds', 'yhat']].copy()
-monthly_forecast['safety_stock'] = safety_stock_value # ใช้ค่าที่คำนวณใหม่
-monthly_forecast['total_required'] = monthly_forecast['yhat'] + monthly_forecast['safety_stock']
-monthly_forecast['month'] = monthly_forecast['ds'].dt.strftime('%b %Y')
-latest_date = df_filtered['ds'].max()
-monthly_forecast = monthly_forecast[monthly_forecast['ds'] > latest_date].head(12)
-monthly_forecast_display = monthly_forecast[['month', 'yhat', 'safety_stock', 'total_required']].copy()
-monthly_forecast_display.columns = ['เดือน', 'ค่าพยากรณ์', 'Safety Stock', 'รวมที่ควรมี']
-monthly_forecast_display = monthly_forecast_display.round(2)
-
-st.subheader("ตารางการเตรียมพร้อมเหรียญรายเดือน (12 เดือนข้างหน้า)")
-st.dataframe(monthly_forecast_display, use_container_width=True)
-
-# (ส่วนที่เหลือของโค้ดสำหรับการสร้างกราฟและตารางยังคงเดิม แต่จะใช้ค่า Safety Stock ใหม่โดยอัตโนมัติ)
-# ... (วางโค้ดส่วนที่เหลือตั้งแต่ กราฟ grouped bar เป็นต้นไป ที่นี่)
-month_order = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-label_map = {'yhat': 'ค่าพยากรณ์', 'safety_stock': 'Safety Stock', 'total_required': 'รวมที่ควรมี'}
-
-# กราฟ grouped bar รายปี ครบ 5 ปี
-st.subheader("กราฟปริมาณเหรียญรายเดือนแยกตามปี พร้อมยอดรวม")
-for year in range(latest_date.year + 1, latest_date.year + 6):
-    yearly_chart = forecast.copy()
-    yearly_chart['year'] = yearly_chart['ds'].dt.year
-    yearly_chart['month'] = yearly_chart['ds'].dt.month
-    yearly_chart['month_name'] = yearly_chart['ds'].dt.strftime('%b')
-    yearly_chart['safety_stock'] = safety_stock_value # ใช้ค่าใหม่
-    yearly_chart['total_required'] = yearly_chart['yhat'] + yearly_chart['safety_stock'] # คำนวณใหม่
-
-    this_year_data = yearly_chart[yearly_chart['year'] == year]
-    monthly_grouped = this_year_data.groupby(['month', 'month_name']).agg({
-        'yhat': 'mean',
-        'safety_stock': 'mean',
-        'total_required': 'mean'
-    }).reset_index()
-
-    monthly_grouped['month_name'] = pd.Categorical(monthly_grouped['month_name'], categories=month_order, ordered=True)
-    monthly_grouped.sort_values('month', inplace=True)
-
-    monthly_long = monthly_grouped.melt(
-        id_vars='month_name',
-        value_vars=['yhat', 'safety_stock', 'total_required'],
-        var_name='ประเภท',
-        value_name='จำนวน'
-    )
-    monthly_long['ประเภท'] = monthly_long['ประเภท'].map(label_map)
-
-    fig_bar = px.bar(
-        monthly_long,
-        x='month_name',
-        y='จำนวน',
-        color='ประเภท',
-        barmode='group',
-        text=monthly_long['จำนวน'].apply(lambda x: f"{x:,.2f}"),
-        labels={'month_name': 'เดือน', 'จำนวน': 'ปริมาณ'},
-        title=f'ปริมาณเหรียญที่ต้องเตรียมแต่ละเดือน ({year})'
-    )
-    fig_bar.update_traces(textposition='outside')
-
-    total_yhat = this_year_data['yhat'].sum()
-    total_safety = this_year_data['safety_stock'].sum()
-    total_total = this_year_data['total_required'].sum()
-
-    fig_bar.update_layout(
-        width=1000,
-        height=500,
-        annotations=[
-            dict(
-                x=0.5,
-                y=1.15,
-                xref='paper',
-                yref='paper',
-                text=f"ยอดรวมปี {year}: ค่าพยากรณ์ = {total_yhat:,.2f}, Safety Stock = {total_safety:,.2f}, รวมที่ควรมี = {total_total:,.2f}",
-                showarrow=False,
-                font=dict(size=12)
-            )
-        ]
-    )
-    st.plotly_chart(fig_bar, use_container_width=True)
-
-
-if st.checkbox("แสดงผลการทำนายทั้งหมด"):
-    full_results = pd.merge(
-        forecast[['ds', 'yhat', 'yhat_lower', 'yhat_upper']],
-        df_filtered[['ds', 'y']],
-        on='ds',
-        how='left'
-    )
-    full_results.rename(columns={
-        'ds': 'วันที่',
-        'y': 'ค่าจริง (Actual)',
-        'yhat': 'ค่าพยากรณ์ (Forecast)',
-        'yhat_lower': 'ช่วงต่ำสุด (Lower Bound)',
-        'yhat_upper': 'ช่วงสูงสุด (Upper Bound)'
-    }, inplace=True)
-
-    full_results['ส่วนต่าง (Actual - Forecast)'] = full_results['ค่าจริง (Actual)'] - full_results['ค่าพยากรณ์ (Forecast)']
-
-    # คำนวณ RMSE และ MAPE จากข้อมูลที่มีค่าจริงเท่านั้น
-    valid_results = full_results.dropna(subset=['ค่าจริง (Actual)', 'ค่าพยากรณ์ (Forecast)'])
-    actual = valid_results['ค่าจริง (Actual)']
-    forecast_vals = valid_results['ค่าพยากรณ์ (Forecast)']
+    /* Radio Buttons as Modern Toggles */
+    div[role="radiogroup"] > label {
+        background-color: #2D3748;
+        color: #E2E8F0;
+        padding: 8px 12px;
+        border-radius: 8px;
+        margin: 0 5px;
+        border: 1px solid transparent;
+        transition: all 0.3s ease;
+    }
+    div[role="radiogroup"] > label:hover {
+        background-color: #4A5568;
+        border-color: #00BFFF;
+    }
     
-    # ตรวจสอบว่ามีข้อมูลสำหรับคำนวณหรือไม่
-    if not actual.empty:
-        rmse = np.sqrt(np.mean((actual - forecast_vals) ** 2))
-        # ป้องกันการหารด้วยศูนย์สำหรับ MAPE
-        mape = np.mean(np.abs((actual - forecast_vals) / actual[actual != 0])) * 100
+    /* Divider */
+    hr {
+        background: linear-gradient(to right, #00BFFF, transparent);
+        height: 2px;
+        border: none;
+    }
+
+</style>
+""", unsafe_allow_html=True)
+
+
+# ------------------ พารามิเตอร์สำหรับโมเดล Prophet ------------------
+PARAMS_DISTRIBUTION = {
+    'changepoint_prior_scale': 0.09983219300142447, 'changepoint_range': 0.8349896986260539,
+    'seasonality_prior_scale': 9.433629187865968, 'seasonality_mode': 'additive',
+    'yearly_seasonality': 1, 'growth': 'linear'
+}
+PARAMS_RETURNS = {
+    'changepoint_prior_scale': 0.016589549889387597, 'changepoint_range': 0.8542895834435257,
+    'seasonality_prior_scale': 6.285629251291158, 'seasonality_mode': 'additive',
+    'yearly_seasonality': 1, 'growth': 'linear'
+}
+
+# ------------------ ฟังก์ชัน Utility ------------------
+@st.cache_data
+def load_data(file_path, sheet_name, date_col):
+    try:
+        df = pd.read_excel(file_path, sheet_name=sheet_name)
+        df.rename(columns={date_col: 'ds'}, inplace=True)
+        df['ds'] = pd.to_datetime(df['ds'])
+        processed_dfs = []
+        numeric_cols = [col for col in df.columns if pd.api.types.is_numeric_dtype(df[col])]
+        for plant in df['PLANTNAME'].unique():
+            plant_df = df[df['PLANTNAME'] == plant].copy()
+            plant_df.set_index('ds', inplace=True)
+            plant_df_resampled = plant_df[numeric_cols].resample('M').sum()
+            plant_df_resampled['PLANTNAME'] = plant
+            processed_dfs.append(plant_df_resampled)
+        final_df = pd.concat(processed_dfs).reset_index()
+        return final_df
+    except FileNotFoundError:
+        st.error(f"ไม่พบไฟล์ข้อมูล: {file_path}")
+        return None
+
+@st.cache_data
+def forecasting_fn(df_name, plant, value_col, prophet_params, periods, interval_width):
+    if df_name == 'dist':
+        df = load_data("DATA_Distribution_Sum_Center.xlsx", 'Sheet1', 'date')
     else:
-        rmse = np.nan
-        mape = np.nan
+        df = load_data("DATA_Exchange_Sum_Center.xlsx", 'Sheet2', 'dc')
+    if df is None: return None, None, "ไม่สามารถโหลดไฟล์ข้อมูลได้"
+    if value_col not in df.columns: return None, None, f"ไม่พบคอลัมน์ '{value_col}'"
+    df_filtered = df.loc[df['PLANTNAME'] == plant, ['ds', value_col]].copy()
+    df_filtered.columns = ['ds', 'y']
+    df_filtered = df_filtered[df_filtered['y'] != 0]
+    df_filtered.dropna(inplace=True)
+    if len(df_filtered) < 2: return None, None, "มีข้อมูลไม่เพียงพอสำหรับการพยากรณ์"
+    model = Prophet(**prophet_params, interval_width=interval_width)
+    model.fit(df_filtered)
+    future = model.make_future_dataframe(periods=periods, freq='M')
+    forecast = model.predict(future)
+    return forecast, df_filtered, None
 
+# ------------------ ฟังก์ชันการแสดงผล ------------------
+def display_forecast_output(column_container, title, forecast, df_filtered, confidence_label, name_for_title):
+    with column_container:
+        st.subheader(title)
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(x=df_filtered['ds'], y=df_filtered['y'], mode='markers', name='Actual', marker=dict(color='#00BFFF', size=8, line=dict(width=1, color='white'))))
+        fig.add_trace(go.Scatter(x=forecast['ds'], y=forecast['yhat'], mode='lines', name='Forecast', line=dict(color='#FF1493', width=3)))
+        fig.add_trace(go.Scatter(x=forecast['ds'], y=forecast['yhat_upper'], mode='lines', line=dict(width=0), showlegend=False))
+        fig.add_trace(go.Scatter(x=forecast['ds'], y=forecast['yhat_lower'], mode='lines', fill='tonexty', fillcolor='rgba(255, 20, 147, 0.2)', line=dict(width=0), name=f'CI ({confidence_label})'))
+        fig.update_layout(title=f'Forecast: {name_for_title}', template='plotly_dark', legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1))
+        st.plotly_chart(fig, use_container_width=True)
+        
+        results_df = pd.merge(forecast[['ds', 'yhat']], df_filtered[['ds', 'y']], on='ds', how='left')
+        results_df.rename(columns={'y': 'ค่าจริง', 'yhat': 'ค่าพยากรณ์'}, inplace=True)
+        results_df['ค่าความแตกต่าง'] = results_df['ค่าพยากรณ์'] - results_df['ค่าจริง']
+        results_df['Error (%)'] = np.where(results_df['ค่าจริง'].notna() & (results_df['ค่าจริง'] != 0), np.abs(results_df['ค่าความแตกต่าง'] / results_df['ค่าจริง']) * 100, np.nan)
+        
+        st.write("ตารางผลการพยากรณ์")
+        def format_thai_date(dt): return f"{dt.year + 543} {dt.strftime('%B')}"
+        results_df['เดือน'] = results_df['ds'].apply(format_thai_date)
+        display_df = results_df[['เดือน', 'ค่าพยากรณ์', 'ค่าจริง', 'ค่าความแตกต่าง', 'Error (%)']].copy()
+        for col in ['ค่าพยากรณ์', 'ค่าจริง', 'ค่าความแตกต่าง', 'Error (%)']:
+            display_df[col] = display_df[col].apply(lambda x: f"{x:,.2f}" if pd.notna(x) else '-')
+        st.dataframe(display_df, use_container_width=True, hide_index=True, height=400)
 
-    full_results = full_results.round(2)
-    st.dataframe(full_results.reset_index(drop=True), use_container_width=True)
+        valid_results = results_df.dropna(subset=['ค่าจริง'])
+        mse, rmse, mape, r2 = [np.nan] * 4
+        if not valid_results.empty:
+            actual, forecast_vals = valid_results['ค่าจริง'], valid_results['ค่าพยากรณ์']
+            mse = np.mean((actual - forecast_vals)**2)
+            rmse = np.sqrt(mse) # FIX: Correctly calculate RMSE from MSE
+            r2 = r2_score(actual, forecast_vals)
+            if not actual[actual != 0].empty:
+                 mape = np.mean(np.abs((actual - forecast_vals) / actual)[actual != 0]) * 100
+        
+        st.write("ประเมินความคลาดเคลื่อน (Accuracy Metrics)")
+        m1, m2 = st.columns(2)
+        m3, m4 = st.columns(2)
+        m1.metric("MSE", f"{mse:,.2f}" if pd.notna(mse) else "N/A")
+        m2.metric("RMSE", f"{rmse:,.2f}" if pd.notna(rmse) else "N/A")
+        m3.metric("MAPE", f"{mape:,.2f}%" if pd.notna(mape) else "N/A")
+        m4.metric("R-squared", f"{r2:,.2f}" if pd.notna(r2) else "N/A")
 
-    st.write(f"**RMSE (Root Mean Square Error):** {rmse:,.2f}")
-    st.write(f"**MAPE (Mean Absolute Percentage Error):** {mape:,.2f}%")
+# ------------------ โครงสร้างหลักของแอป ------------------
+st.title("🦉 AI Mint Forecast Dashboard")
+
+# --- โหลดข้อมูล ---
+df_dist_check = load_data("DATA_Distribution_Sum_Center.xlsx", 'Sheet1', 'date')
+df_ret_check = load_data("DATA_Exchange_Sum_Center.xlsx", 'Sheet2', 'dc')
+if df_dist_check is None or df_ret_check is None: st.stop()
+
+# --- Sidebar ---
+st.sidebar.header("⚙️ ตัวกรอง")
+center_options = sorted(list(set(df_dist_check['PLANTNAME'].unique())|set(df_ret_check['PLANTNAME'].unique())))
+selected_center = st.sidebar.selectbox("เลือกศูนย์ (Center)", center_options, index=(center_options.index('ทั่วประเทศ') if 'ทั่วประเทศ' in center_options else 0))
+coin_display_map = {'10 บาท': '10.0', '5 บาท': '5.0', '2 บาท': '2.0', '1 บาท': '1.0', '50 สตางค์': '0.5', '25 สตางค์': '0.25', 'รวมทั้งหมด': 'รวม'}
+selected_coin_display = st.sidebar.selectbox("เลือกชนิดราคา", options=list(coin_display_map.keys()))
+forecast_periods = st.sidebar.number_input("พยากรณ์ล่วงหน้า (เดือน)", 1, 120, 24, 1)
+confidence_options = {'90%': 0.90, '95%': 0.95, '99%': 0.99}
+selected_confidence_label = st.sidebar.selectbox("ระดับความเชื่อมั่น", options=list(confidence_options.keys()), index=1)
+return_type_map = {'จ่ายได้': 'G', 'ชำรุด': 'B', 'รวม': 'A'}
+return_coin_map = {'10.0': '10', '5.0': '5', '2.0': '2', '1.0': '1', '0.5': '0.50', '0.25': '0.25', 'รวม': 'total'}
+
+# --- ส่วนด้านการประมาณการ ---
+st.header("📈 ประมาณการส่วนต่างสุทธิ")
+selected_return_type_est_display = st.radio("เลือกสภาพเหรียญ (รับคืน) เพื่อเปรียบเทียบ", options=list(return_type_map.keys()), horizontal=True, key="estimation_return_type", index=2)
+
+dist_value_col = coin_display_map[selected_coin_display]
+forecast_dist, df_filtered_dist, error_dist = forecasting_fn('dist', selected_center, dist_value_col, PARAMS_DISTRIBUTION, forecast_periods, confidence_options[selected_confidence_label])
+ret_val_est = coin_display_map[selected_coin_display]
+ret_col_est = f"{return_coin_map[ret_val_est]}_{return_type_map[selected_return_type_est_display]}" if return_coin_map[ret_val_est] == 'total' else f"{return_coin_map[ret_val_est]}{return_type_map[selected_return_type_est_display]}"
+forecast_ret_est, df_filtered_ret_est, error_ret_est = forecasting_fn('ret', selected_center, ret_col_est, PARAMS_RETURNS, forecast_periods, confidence_options[selected_confidence_label])
+
+if error_dist is None and error_ret_est is None:
+    dist_future = pd.merge(forecast_dist[['ds', 'yhat']], df_filtered_dist[['ds', 'y']], on='ds', how='left').query("y.isna()").rename(columns={'yhat': 'yhat_dist'})
+    ret_future = pd.merge(forecast_ret_est[['ds', 'yhat']], df_filtered_ret_est[['ds', 'y']], on='ds', how='left').query("y.isna()").rename(columns={'yhat': 'yhat_ret'})
+    future_net_df = pd.merge(dist_future[['ds', 'yhat_dist']], ret_future[['ds', 'yhat_ret']], on='ds', how='outer').sort_values('ds').fillna(0)
+    
+    if not future_net_df.empty:
+        future_net_df['net_forecast'] = future_net_df['yhat_dist'] - future_net_df['yhat_ret']
+        
+        # --- IMPROVEMENT: Enhanced Graph for Net Estimation ---
+        fig_net = go.Figure()
+        fig_net.add_trace(go.Scatter(
+            x=future_net_df['ds'], y=future_net_df['yhat_dist'], name='พยากรณ์จ่ายแลก', 
+            line=dict(color='#00BFFF', width=2),
+            hovertemplate='จ่ายแลก: %{y:,.2f}<extra></extra>'
+        ))
+        fig_net.add_trace(go.Scatter(
+            x=future_net_df['ds'], y=future_net_df['yhat_ret'], name='พยากรณ์รับคืน', 
+            line=dict(color='#FFA500', width=2),
+            hovertemplate='รับคืน: %{y:,.2f}<extra></extra>'
+        ))
+        fig_net.add_trace(go.Bar(
+            x=future_net_df['ds'], y=future_net_df['net_forecast'], name='ส่วนต่างสุทธิ',
+            marker_color=np.where(future_net_df['net_forecast'] >= 0, '#28a745', '#dc3545'),
+            customdata=future_net_df[['yhat_dist', 'yhat_ret']],
+            hovertemplate=(
+                '<b>เดือน: %{x|%B %Y}</b><br>' +
+                '<b>ส่วนต่างสุทธิ: %{y:,.2f}</b><br>' +
+                'จ่ายแลก: %{customdata[0]:,.2f}<br>' +
+                'รับคืน: %{customdata[1]:,.2f}<extra></extra>'
+            )
+        ))
+        fig_net.update_layout(
+            title=f"ประมาณการ: {selected_coin_display} (เทียบกับรับคืน '{selected_return_type_est_display}')", 
+            template='plotly_dark',
+            legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1),
+            barmode='relative'
+        )
+        st.plotly_chart(fig_net, use_container_width=True)
+        
+        st.write("ตารางข้อมูลส่วนต่างสุทธิ")
+        display_net_df = future_net_df[['ds', 'yhat_dist', 'yhat_ret', 'net_forecast']].rename(columns={'ds': 'เดือน', 'yhat_dist': 'พยากรณ์จ่ายแลก', 'yhat_ret': 'พยากรณ์รับคืน', 'net_forecast': 'ส่วนต่างสุทธิ'})
+        display_net_df['เดือน'] = display_net_df['เดือน'].apply(lambda dt: f"{dt.year + 543} {dt.strftime('%B')}")
+        for col in ['พยากรณ์จ่ายแลก', 'พยากรณ์รับคืน', 'ส่วนต่างสุทธิ']:
+            display_net_df[col] = display_net_df[col].apply(lambda x: f"{x:,.2f}")
+        st.dataframe(display_net_df, use_container_width=True, hide_index=True)
+else:
+    if error_dist: st.warning(f"คำนวณส่วนต่างไม่ได้ (จ่ายแลก): {error_dist}")
+    if error_ret_est: st.warning(f"คำนวณส่วนต่างไม่ได้ (รับคืน): {error_ret_est}")
+
+st.divider()
+
+# --- แบ่งหน้าจอเป็น 2 คอลัมน์ ---
+col_dist, col_ret = st.columns(2)
+with col_dist:
+    if error_dist: st.error(f"**การจ่ายแลก:** {error_dist}")
+    elif forecast_dist is not None:
+        display_forecast_output(st.container(), "📊 การจ่ายแลก", forecast_dist, df_filtered_dist, selected_confidence_label, f"{selected_coin_display} @ {selected_center}")
+with col_ret:
+    sub_col, radio_col = st.columns([1, 2])
+    with sub_col: st.subheader("📊 การรับคืน")
+    with radio_col:
+        selected_return_type_display = st.radio("เลือกสภาพเหรียญ", options=list(return_type_map.keys()), horizontal=True, key="return_type", label_visibility="collapsed")
+    ret_val = coin_display_map[selected_coin_display]
+    ret_col = f"{return_coin_map[ret_val]}_{return_type_map[selected_return_type_display]}" if return_coin_map[ret_val] == 'total' else f"{return_coin_map[ret_val]}{return_type_map[selected_return_type_display]}"
+    forecast_ret, df_filtered_ret, error_ret = forecasting_fn('ret', selected_center, ret_col, PARAMS_RETURNS, forecast_periods, confidence_options[selected_confidence_label])
+    if error_ret: st.error(f"**การรับคืน:** {error_ret}")
+    elif forecast_ret is not None:
+        display_forecast_output(st.container(), "", forecast_ret, df_filtered_ret, selected_confidence_label, f"{selected_coin_display} ({selected_return_type_display}) @ {selected_center}")
+
