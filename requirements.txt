@@ -6,3 +6,4 @@ yfinance
 prophet
 openpyxl
 scipy
+sklearn
