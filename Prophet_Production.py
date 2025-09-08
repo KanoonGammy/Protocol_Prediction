@@ -211,8 +211,8 @@ last_historical_date = df_dist_check['ds'].max()
 future_dates = pd.date_range(start=last_historical_date, periods=forecast_periods + 1, freq='M')
 future_years = sorted(list(set([get_fiscal_year(d) for d in future_dates])), reverse=True)
 combined_years = sorted(list(set(historical_years + future_years)), reverse=True)
-fiscal_year_options = ["ทั้งหมด"] + combined_years
-selected_fiscal_year = st.sidebar.selectbox("เลือกปีงบประมาณ", fiscal_year_options)
+fiscal_year_options_sidebar = ["ทั้งหมด"] + combined_years
+selected_fiscal_year_sidebar = st.sidebar.selectbox("เลือกปีงบประมาณ", fiscal_year_options_sidebar)
 confidence_options = {'90%': 0.90, '95%': 0.95, '99%': 0.99}
 selected_confidence_label = st.sidebar.selectbox("ระดับความเชื่อมั่น", list(confidence_options.keys()), index=1)
 return_type_map = {'จ่ายได้': 'G', 'ชำรุด': 'B', 'รวม': 'A'}
@@ -242,9 +242,8 @@ if all_net_forecasts:
     final_net_df = pd.concat(all_net_forecasts)
     final_net_df['fiscal_year'] = final_net_df['ds'].apply(get_fiscal_year)
     
-    # Apply fiscal year filter to the final estimation data
-    if selected_fiscal_year != "ทั้งหมด":
-        final_net_df_display = final_net_df[final_net_df['fiscal_year'] == selected_fiscal_year]
+    if selected_fiscal_year_sidebar != "ทั้งหมด":
+        final_net_df_display = final_net_df[final_net_df['fiscal_year'] == selected_fiscal_year_sidebar]
     else:
         final_net_df_display = final_net_df
 
@@ -276,28 +275,30 @@ if all_net_forecasts:
 st.divider()
 st.header("🔎 การพยากรณ์รายชนิดราคา")
 col_dist, col_ret = st.columns(2)
-dist_value_col = coin_display_map[selected_coin_display]
-forecast_dist, df_filtered_dist, error_dist = forecasting_fn('dist', selected_center, dist_value_col, PARAMS_DISTRIBUTION, forecast_periods, confidence_options[selected_confidence_label])
-ret_val = coin_display_map[selected_coin_display]
 with col_dist:
-    if error_dist: st.error(f"**การจ่ายแลก:** {error_dist}")
+    dist_value_col = coin_display_map[selected_coin_display]
+    forecast_dist, df_filtered_dist, error_dist = forecasting_fn('dist', selected_center, dist_value_col, PARAMS_DISTRIBUTION, forecast_periods, confidence_options[selected_confidence_label])
+    if error_dist:
+        st.error(f"**การจ่ายแลก:** {error_dist}")
     elif forecast_dist is not None:
         forecast_dist['fiscal_year'] = forecast_dist['ds'].apply(get_fiscal_year)
         df_filtered_dist['fiscal_year'] = df_filtered_dist['ds'].apply(get_fiscal_year)
-        forecast_to_display = forecast_dist[forecast_dist['fiscal_year'] == selected_fiscal_year] if selected_fiscal_year != "ทั้งหมด" else forecast_dist
-        df_to_display = df_filtered_dist[df_filtered_dist['fiscal_year'] == selected_fiscal_year] if selected_fiscal_year != "ทั้งหมด" else df_filtered_dist
+        forecast_to_display = forecast_dist[forecast_dist['fiscal_year'] == selected_fiscal_year_sidebar] if selected_fiscal_year_sidebar != "ทั้งหมด" else forecast_dist
+        df_to_display = df_filtered_dist[df_filtered_dist['fiscal_year'] == selected_fiscal_year_sidebar] if selected_fiscal_year_sidebar != "ทั้งหมด" else df_filtered_dist
         display_forecast_output(st.container(), "📊 การจ่ายแลก", forecast_to_display, df_to_display, selected_confidence_label, f"{selected_coin_display} @ {selected_center}")
 with col_ret:
     st.subheader("📊 การรับคืน")
     selected_return_type_display = st.radio("เลือกสภาพเหรียญ", list(return_type_map.keys()), horizontal=True, key="return_type_display")
+    ret_val = coin_display_map[selected_coin_display]
     ret_col_display = f"{return_coin_map[ret_val]}_{return_type_map[selected_return_type_display]}" if return_coin_map[ret_val] == 'total' else f"{return_coin_map[ret_val]}{return_type_map[selected_return_type_display]}"
     forecast_ret, df_filtered_ret, error_ret = forecasting_fn('ret', selected_center, ret_col_display, PARAMS_RETURNS, forecast_periods, confidence_options[selected_confidence_label])
-    if error_ret: st.error(f"**การรับคืน:** {error_ret}")
+    if error_ret:
+        st.error(f"**การรับคืน:** {error_ret}")
     elif forecast_ret is not None:
         forecast_ret['fiscal_year'] = forecast_ret['ds'].apply(get_fiscal_year)
         df_filtered_ret['fiscal_year'] = df_filtered_ret['ds'].apply(get_fiscal_year)
-        forecast_to_display = forecast_ret[forecast_ret['fiscal_year'] == selected_fiscal_year] if selected_fiscal_year != "ทั้งหมด" else forecast_ret
-        df_to_display = df_filtered_ret[df_filtered_ret['fiscal_year'] == selected_fiscal_year] if selected_fiscal_year != "ทั้งหมด" else df_filtered_ret
+        forecast_to_display = forecast_ret[forecast_ret['fiscal_year'] == selected_fiscal_year_sidebar] if selected_fiscal_year_sidebar != "ทั้งหมด" else forecast_ret
+        df_to_display = df_filtered_ret[df_filtered_ret['fiscal_year'] == selected_fiscal_year_sidebar] if selected_fiscal_year_sidebar != "ทั้งหมด" else df_filtered_ret
         display_forecast_output(st.container(), "", forecast_to_display, df_to_display, selected_confidence_label, f"{selected_coin_display} ({selected_return_type_display}) @ {selected_center}")
 st.divider()
 st.subheader("ทีมผู้พัฒนา")
