@@ -257,6 +257,10 @@ if all_net_forecasts:
     fig_total.update_traces(marker_color='#0052CC', hovertemplate='<b>เดือน: %{x}</b><br><b>ความต้องการสุทธิ: %{y:,.2f}</b><extra></extra>')
     fig_total.update_layout(yaxis_title="จำนวน (ล้านเหรียญ)", xaxis_title="เดือน", xaxis_tickangle=-90)
     st.plotly_chart(fig_total, use_container_width=True)
+    with st.expander("แสดง/ซ่อนตารางข้อมูลภาพรวม"):
+        display_total_df = total_net_df[['ds_str', 'net_forecast']].rename(columns={'ds_str': 'เดือน', 'net_forecast': 'ความต้องการสุทธิ (บต.)'})
+        st.dataframe(display_total_df.style.format({'ความต้องการสุทธิ (บต.)': '{:,.2f}'}, na_rep="-"), use_container_width=True, hide_index=True)
+
     st.subheader("รายละเอียดความต้องการเหรียญสุทธิรายชนิดราคา")
     color_map = {'10 บาท': '#FFC107', '5 บาท': '#28a745', '2 บาท': '#6f42c1', '1 บาท': '#0d6efd', '50 สตางค์': '#fd7e14', '25 สตางค์': '#dc3545'}
     estimation_cols = st.columns(3)
@@ -270,6 +274,11 @@ if all_net_forecasts:
                 fig_net.update_traces(marker_color=color_map.get(coin_name, '#888888'), hovertemplate='<b>เดือน: %{x}</b><br><b>ความต้องการสุทธิ: %{y:,.2f}</b><br><br>จ่ายแลก: %{customdata[0]:,.2f}<br>รับคืน: %{customdata[1]:,.2f}<extra></extra>')
                 fig_net.update_layout(yaxis_title="", xaxis_title="", showlegend=False, xaxis_tickangle=-90)
                 st.plotly_chart(fig_net, use_container_width=True)
+                with st.expander(f"ตารางข้อมูล {coin_name}"):
+                    display_net_df = coin_df[['ds', 'yhat_dist', 'yhat_ret', 'net_forecast']].rename(columns={'ds': 'เดือน', 'yhat_dist': 'พยากรณ์จ่ายแลก', 'yhat_ret': 'พยากรณ์รับคืน', 'net_forecast': 'ความต้องการสุทธิ (บต.)'})
+                    display_net_df['เดือน'] = display_net_df['เดือน'].apply(lambda dt: format_month_year_thai(dt))
+                    formatter_expander = {'พยากรณ์จ่ายแลก': '{:,.2f}', 'พยากรณ์รับคืน': '{:,.2f}', 'ความต้องการสุทธิ (บต.)': '{:,.2f}'}
+                    st.dataframe(display_net_df.style.format(formatter_expander, na_rep="-"), use_container_width=True, hide_index=True)
         col_index += 1
 
 st.divider()
