@@ -307,8 +307,6 @@ elif all_net_forecasts:
                     )
         col_index += 1
 
-st.divider()
-
 st.header("🔎 การพยากรณ์รายชนิดราคา")
 col_dist, col_ret = st.columns(2)
 with col_dist:
@@ -342,5 +340,6 @@ with dev_cols[1]:
     st.markdown("<div style='padding: 10px; border: 1px solid #E0E0E0; border-radius: 10px; background-color: #FFFFFF; height: 100%; text-align: center;'><b>นายธนาคาร จักรธำรงค์</b><br><i>นักวิชาการคลังปฏิบัติการ</i></div>", unsafe_allow_html=True)
 with dev_cols[2]:
     st.markdown("<div style='padding: 10px; border: 1px solid #E0E0E0; border-radius: 10px; background-color: #FFFFFF; height: 100%; text-align: center;'><b>นางสาวจารุวรรณ ตาลดี</b><br><i>เจ้าพนักงานดูเงินชำนาญงาน</i></div>", unsafe_allow_html=True)
+
 
 
