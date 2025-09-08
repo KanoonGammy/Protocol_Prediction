@@ -150,7 +150,6 @@ thai_month_abbr = {
 def format_thai_date_short(dt):
     return f"{thai_month_abbr[dt.month]} {str(dt.year + 543)[-2:]}"
 
-# FIX: Define function in global scope to prevent NameError
 def format_month_year_thai(dt):
     return f"{dt.strftime('%B')} {dt.year + 543}"
 
@@ -175,7 +174,6 @@ def display_forecast_output(column_container, title, forecast, df_filtered, conf
         fig.update_layout(title=f'Forecast: {name_for_title}', template='plotly_white', legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1), xaxis_tickangle=-90)
         st.plotly_chart(fig, use_container_width=True)
         
-        # Make the table and metrics collapsible
         with st.expander("แสดง/ซ่อนตารางผลการพยากรณ์และค่าสถิติ"):
             results_df = pd.merge(forecast[['ds', 'yhat']], df_filtered[['ds', 'y']], on='ds', how='left')
             results_df.rename(columns={'y': 'ค่าจริง', 'yhat': 'ค่าพยากรณ์'}, inplace=True)
@@ -230,7 +228,7 @@ selected_coin_display = st.sidebar.selectbox("เลือกชนิดรา�
 df_dist_check['fiscal_year'] = df_dist_check['ds'].apply(get_fiscal_year)
 all_years = sorted(df_dist_check['fiscal_year'].unique(), reverse=True)
 fiscal_year_options = ["ทั้งหมด"] + all_years
-selected_fiscal_year = st.sidebar.selectbox("เลือกปีงบประมาณ", fiscal_year_options)
+selected_fiscal_year = st.sidebar.selectbox("เลือกปีงบประมาณ (สำหรับกราฟด้านล่าง)", fiscal_year_options)
 
 forecast_periods = st.sidebar.number_input("พยากรณ์ล่วงหน้า (เดือน)", 1, 120, 24, 1)
 confidence_options = {'90%': 0.90, '95%': 0.95, '99%': 0.99}
@@ -265,11 +263,6 @@ with st.spinner("กำลังคำนวณผลการประมาณ
 
 if all_net_forecasts:
     final_net_df = pd.concat(all_net_forecasts)
-    final_net_df['fiscal_year'] = final_net_df['ds'].apply(get_fiscal_year)
-    
-    if selected_fiscal_year != "ทั้งหมด":
-        final_net_df = final_net_df[final_net_df['fiscal_year'] == selected_fiscal_year]
-
     total_net_df = final_net_df.groupby('ds')['net_forecast'].sum().reset_index()
     total_net_df['ds_str'] = total_net_df['ds'].apply(format_thai_date_short)
 
@@ -304,9 +297,12 @@ st.divider()
 st.header("🔎 การพยากรณ์รายชนิดราคา")
 
 col_dist, col_ret = st.columns(2)
+# Re-run forecasts for the selected coin to be displayed
+dist_value_col = coin_display_map[selected_coin_display]
+forecast_dist, df_filtered_dist, error_dist = forecasting_fn('dist', selected_center, dist_value_col, PARAMS_DISTRIBUTION, forecast_periods, confidence_options[selected_confidence_label])
+ret_val = coin_display_map[selected_coin_display]
+
 with col_dist:
-    dist_value_col = coin_display_map[selected_coin_display]
-    forecast_dist, df_filtered_dist, error_dist = forecasting_fn('dist', selected_center, dist_value_col, PARAMS_DISTRIBUTION, forecast_periods, confidence_options[selected_confidence_label])
     if error_dist: st.error(f"**การจ่ายแลก:** {error_dist}")
     elif forecast_dist is not None:
         forecast_dist['fiscal_year'] = forecast_dist['ds'].apply(get_fiscal_year)
@@ -318,7 +314,6 @@ with col_dist:
 with col_ret:
     st.subheader("📊 การรับคืน")
     selected_return_type_display = st.radio("เลือกสภาพเหรียญ", options=list(return_type_map.keys()), horizontal=True, key="return_type_display")
-    ret_val = coin_display_map[selected_coin_display]
     ret_col_display = f"{return_coin_map[ret_val]}_{return_type_map[selected_return_type_display]}" if return_coin_map[ret_val] == 'total' else f"{return_coin_map[ret_val]}{return_type_map[selected_return_type_display]}"
     forecast_ret, df_filtered_ret, error_ret = forecasting_fn('ret', selected_center, ret_col_display, PARAMS_RETURNS, forecast_periods, confidence_options[selected_confidence_label])
     if error_ret: st.error(f"**การรับคืน:** {error_ret}")
