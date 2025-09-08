@@ -318,10 +318,14 @@ with col_dist:
     elif forecast_dist is not None:
         display_forecast_output(st.container(), "📊 การจ่ายแลก", forecast_dist, df_filtered_dist, selected_confidence_label, f"{selected_coin_display} @ {selected_center}")
 with col_ret:
-    sub_col, radio_col = st.columns([1, 2])
-    with sub_col: st.subheader("📊 การรับคืน")
-    with radio_col:
-        selected_return_type_display = st.radio("เลือกสภาพเหรียญ", options=list(return_type_map.keys()), horizontal=True, key="return_type", label_visibility="collapsed")
+    st.subheader("📊 การรับคืน")
+    selected_return_type_display = st.radio(
+        "เลือกสภาพเหรียญ",
+        options=list(return_type_map.keys()),
+        horizontal=True,
+        key="return_type"
+    )
+    
     ret_val = coin_display_map[selected_coin_display]
     ret_col = f"{return_coin_map[ret_val]}_{return_type_map[selected_return_type_display]}" if return_coin_map[ret_val] == 'total' else f"{return_coin_map[ret_val]}{return_type_map[selected_return_type_display]}"
     forecast_ret, df_filtered_ret, error_ret = forecasting_fn('ret', selected_center, ret_col, PARAMS_RETURNS, forecast_periods, confidence_options[selected_confidence_label])
@@ -338,4 +342,5 @@ with dev_cols[1]:
     st.markdown("<div style='padding: 10px; border: 1px solid #E0E0E0; border-radius: 10px; background-color: #FFFFFF; height: 100%; text-align: center;'><b>นายธนาคาร จักรธำรงค์</b><br><i>นักวิชาการคลังปฏิบัติการ</i></div>", unsafe_allow_html=True)
 with dev_cols[2]:
     st.markdown("<div style='padding: 10px; border: 1px solid #E0E0E0; border-radius: 10px; background-color: #FFFFFF; height: 100%; text-align: center;'><b>นางสาวจารุวรรณ ตาลดี</b><br><i>เจ้าพนักงานดูเงินชำนาญงาน</i></div>", unsafe_allow_html=True)
+
 
