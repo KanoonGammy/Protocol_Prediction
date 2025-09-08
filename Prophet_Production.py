@@ -222,15 +222,21 @@ selected_center = st.sidebar.selectbox("เลือกศูนย์ (Center)"
 coin_display_map = {'10 บาท': '10.0', '5 บาท': '5.0', '2 บาท': '2.0', '1 บาท': '1.0', '50 สตางค์': '0.5', '25 สตางค์': '0.25', 'รวมทั้งหมด': 'รวม'}
 coin_options = list(coin_display_map.keys())
 default_coin_index = coin_options.index('รวมทั้งหมด') if 'รวมทั้งหมด' in coin_options else 0
-selected_coin_display = st.sidebar.selectbox("เลือกชนิดราคา (สำหรับกราฟด้านล่าง)", options=coin_options, index=default_coin_index)
-
-# Fiscal Year Filter
-df_dist_check['fiscal_year'] = df_dist_check['ds'].apply(get_fiscal_year)
-all_years = sorted(df_dist_check['fiscal_year'].unique(), reverse=True)
-fiscal_year_options = ["ทั้งหมด"] + all_years
-selected_fiscal_year = st.sidebar.selectbox("เลือกปีงบประมาณ (สำหรับกราฟด้านล่าง)", fiscal_year_options)
+selected_coin_display = st.sidebar.selectbox("เลือกชนิดราคา", options=coin_options, index=default_coin_index)
 
 forecast_periods = st.sidebar.number_input("พยากรณ์ล่วงหน้า (เดือน)", 1, 120, 24, 1)
+
+# Fiscal Year Filter Generation
+df_dist_check['fiscal_year'] = df_dist_check['ds'].apply(get_fiscal_year)
+historical_years = sorted(df_dist_check['fiscal_year'].unique(), reverse=True)
+last_historical_date = df_dist_check['ds'].max()
+future_dates = pd.date_range(start=last_historical_date, periods=forecast_periods + 1, freq='M')
+future_years = sorted(list(set([get_fiscal_year(d) for d in future_dates])), reverse=True)
+combined_years = sorted(list(set(historical_years + future_years)), reverse=True)
+fiscal_year_options = ["ทั้งหมด"] + combined_years
+selected_fiscal_year = st.sidebar.selectbox("เลือกปีงบประมาณ", fiscal_year_options)
+
+
 confidence_options = {'90%': 0.90, '95%': 0.95, '99%': 0.99}
 selected_confidence_label = st.sidebar.selectbox("ระดับความเชื่อมั่น", options=list(confidence_options.keys()), index=1)
 
@@ -263,6 +269,7 @@ with st.spinner("กำลังคำนวณผลการประมาณ
 
 if all_net_forecasts:
     final_net_df = pd.concat(all_net_forecasts)
+    
     total_net_df = final_net_df.groupby('ds')['net_forecast'].sum().reset_index()
     total_net_df['ds_str'] = total_net_df['ds'].apply(format_thai_date_short)
 
@@ -297,7 +304,6 @@ st.divider()
 st.header("🔎 การพยากรณ์รายชนิดราคา")
 
 col_dist, col_ret = st.columns(2)
-# Re-run forecasts for the selected coin to be displayed
 dist_value_col = coin_display_map[selected_coin_display]
 forecast_dist, df_filtered_dist, error_dist = forecasting_fn('dist', selected_center, dist_value_col, PARAMS_DISTRIBUTION, forecast_periods, confidence_options[selected_confidence_label])
 ret_val = coin_display_map[selected_coin_display]
